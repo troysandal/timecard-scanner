@@ -18,7 +18,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "verify:ios": "xcodebuild -scheme TimeCardScanner -destination generic/platform=iOS build",
+    "verify:ios": "xcodebuild -scheme TimecardScanner -destination generic/platform=iOS build",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build",
     "verify:android": "cd android && ./gradlew testDebugUnitTest assembleDebug",

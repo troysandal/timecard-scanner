@@ -15,7 +15,7 @@ npm install
 npm run build              # tsc -> dist/esm (also runs on `npm install` via `prepare`)
 npm run typecheck
 npm run verify:core-ios    # cd ios/Core && swift test   (macOS 26; Swift Testing)
-npm run verify:ios         # xcodebuild -scheme TimeCardScanner -destination generic/platform=iOS build
+npm run verify:ios         # xcodebuild -scheme TimecardScanner -destination generic/platform=iOS build
 npm run verify:android     # cd android && ./gradlew testDebugUnitTest assembleDebug  (JDK 21, Android SDK)
 ```
 
@@ -30,7 +30,7 @@ Android needs an SDK location: `ANDROID_HOME` or `android/local.properties` (git
 Three layers; the reader differs per platform, the JS API and rejection codes are identical.
 
 - **`src/`** — TypeScript only: `definitions.ts` (the public API: `isAvailable`, `captureCard`, `scanImage`, and `ScanErrorCode`), `index.ts` (`registerPlugin`), `web.ts` (fallback: `isAvailable()` false, everything else rejects `UNAVAILABLE`). `dist/` is generated and git-ignored.
-- **iOS** — two SwiftPM packages, deliberately separate:
+- **iOS** — two SwiftPM packages, deliberately separate. The root package/product is named `TimecardScanner` (lower-case "c") because `cap sync` derives it from the npm name; the plugin id stays `TimeCardScanner`:
   - `ios/Core/` (`TimeCardScannerCore`, Swift 6.2, **no Capacitor dependency** so `swift test` and Mac tools build without it). `TimeCardScanner.scan(_:)` calls Apple's `RecognizeDocumentsRequest` (`AppleTable`, the only Vision call), then `AppleTableCleanup`, `Charset` (misread→digit mapping, must stay in sync with `Charset.kt`), `CheckpointCheck`, `ScanFlag`. Everything is `@available(iOS 26, macOS 26)`; the declared minimum is iOS 15 only so the plugin can link it.
   - Root `Package.swift` + `ios/Sources/TimeCardScannerPlugin/`: the `CAPPlugin` bridge and `DocumentCameraPresenter` (`VNDocumentCameraViewController`). Compiles for the host's iOS 15 target and guards with `#available(iOS 26)`; below that it rejects `UNAVAILABLE`.
 - **Android** — one Gradle module (Capacitor includes a plugin's `android/` as a single project) built from two source trees by `android/build.gradle`:

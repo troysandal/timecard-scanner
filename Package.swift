@@ -1,11 +1,14 @@
 // swift-tools-version: 5.9
 import PackageDescription
 
+// The package and product name must be what `npx cap sync` derives from the npm name (`timecard-scanner` ->
+// `TimecardScanner`, lower-case "c"): the host's CapApp-SPM references exactly that. The Capacitor plugin id
+// (`TimeCardScanner`, in the Swift and Kotlin classes and `registerPlugin`) is separate and stays as it is.
 let package = Package(
-    name: "TimeCardScanner",
+    name: "TimecardScanner",
     platforms: [.iOS(.v15)],
     products: [
-        .library(name: "TimeCardScanner", targets: ["TimeCardScannerPlugin"]),
+        .library(name: "TimecardScanner", targets: ["TimeCardScannerPlugin"]),
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.0.0"),

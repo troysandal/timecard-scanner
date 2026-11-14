@@ -29,6 +29,10 @@ public class TimeCardScannerPlugin: CAPPlugin, CAPBridgedPlugin {
 
     /// Kept alive for the duration of one camera presentation.
     private var presenter: AnyObject?
+    /// One capture at a time. Claimed synchronously in `captureCard`, before the main-actor hop, so two
+    /// quick calls cannot both pass; released when the camera finishes, or when there is no view controller to
+    /// present from.
+    private let captureSlot = SingleSlot()
 
     // MARK: Methods
 
@@ -51,18 +55,20 @@ public class TimeCardScannerPlugin: CAPPlugin, CAPBridgedPlugin {
         } catch {
             return call.reject("Invalid destination: \(error.localizedDescription)", ErrorCode.invalidArgument)
         }
-        guard presenter == nil else {
+        guard let slot = captureSlot.acquire() else {
             return call.reject("A capture is already in progress.", ErrorCode.busy)
         }
 
         Task { @MainActor in
             guard let host = self.bridge?.viewController else {
+                self.captureSlot.release(slot)
                 return call.reject("No view controller to present the scanner from.", ErrorCode.unavailable)
             }
             let camera = DocumentCameraPresenter()
             self.presenter = camera
             camera.present(from: host) { outcome in
-                self.presenter = nil
+                if self.presenter === camera { self.presenter = nil }
+                self.captureSlot.release(slot)
                 switch outcome {
                 case .cancelled:
                     call.reject("The user cancelled the scan.", ErrorCode.cancelled)

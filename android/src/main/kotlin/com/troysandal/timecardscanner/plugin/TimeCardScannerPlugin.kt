@@ -18,6 +18,7 @@ import com.troysandal.timecardscanner.TableScan
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * Capacitor bridge for the Android timecard scanner: the same three methods, result shape and rejection
@@ -39,7 +40,7 @@ class TimeCardScannerPlugin : Plugin() {
 
     private val worker = Executors.newSingleThreadExecutor()
     private lateinit var scannerLauncher: ActivityResultLauncher<IntentSenderRequest>
-    private var capture: Capture? = null
+    private val gate = CaptureGate<Capture>()
 
     override fun load() {
         // Must be registered before the activity starts, hence here and not when capturing.
@@ -47,6 +48,8 @@ class TimeCardScannerPlugin : Plugin() {
     }
 
     override fun handleOnDestroy() {
+        // The scanner's result can no longer reach this instance: settle the call instead of leaving it hanging.
+        gate.settle { it.call.reject("The capture was interrupted: the app's activity was destroyed.", SCAN_FAILED) }
         worker.shutdown()
     }
 
@@ -67,15 +70,23 @@ class TimeCardScannerPlugin : Plugin() {
         } catch (e: IllegalArgumentException) {
             return call.reject("Invalid destination: ${e.message}", INVALID_ARGUMENT)
         }
-        if (capture != null) return call.reject("A capture is already in progress.", BUSY)
-        capture = Capture(call, folder)
+        val capture = Capture(call, folder)
+        if (!gate.begin(capture)) return call.reject("A capture is already in progress.", BUSY)
         DocumentCapture.start(
             activity,
-            onReady = { sender -> scannerLauncher.launch(IntentSenderRequest.Builder(sender).build()) },
+            onReady = { sender ->
+                // Already settled (e.g. the plugin was destroyed meanwhile): do not open a scanner nobody awaits.
+                if (!gate.holds(capture)) return@start
+                try {
+                    scannerLauncher.launch(IntentSenderRequest.Builder(sender).build())
+                } catch (e: Exception) {
+                    // e.g. the activity is finishing. Without this the gate would stay busy for good.
+                    gate.settle(capture) { it.call.reject("Could not open the document scanner: ${e.message}", SCAN_FAILED, e) }
+                }
+            },
             onError = { e ->
-                capture = null
                 // Typically the scanner module has not been downloaded yet (the phone was never online with the app).
-                call.reject("The document scanner is not available: ${e.message}", UNAVAILABLE, e)
+                gate.settle(capture) { it.call.reject("The document scanner is not available: ${e.message}", UNAVAILABLE, e) }
             },
         )
     }
@@ -85,25 +96,33 @@ class TimeCardScannerPlugin : Plugin() {
         val path = call.getString("path")
         if (path.isNullOrEmpty()) return call.reject("`path` is required.", INVALID_ARGUMENT)
         val file = File(if (path.startsWith("file://")) Uri.parse(path).path ?: path else path)
-        worker.execute { scan(file, emptyList(), call) }
+        try {
+            worker.execute { scan(file, emptyList(), call) }
+        } catch (e: RejectedExecutionException) {
+            call.reject("The plugin is shutting down.", SCAN_FAILED, e)
+        }
     }
 
     // ----------------------------------------------------------------- scanning
 
     private fun onScannerResult(result: ActivityResult) {
-        val pending = capture ?: return
-        capture = null
+        val pending = gate.take() ?: return
         val pages = DocumentCapture.pages(result.resultCode, result.data)
             ?: return pending.call.reject("The user cancelled the scan.", CANCELLED)
-        worker.execute {
+        val job = Runnable {
             val file = File(pending.folder, "timecard-${UUID.randomUUID()}.jpg")
             try {
                 DocumentCapture.save(context, pages[0], file)
             } catch (e: Exception) {
-                return@execute pending.call.reject("Could not save the photo: ${e.message}", SCAN_FAILED, e)
+                return@Runnable pending.call.reject("Could not save the photo: ${e.message}", SCAN_FAILED, e)
             }
             val extra = if (pages.size > 1) listOf("The scanner returned ${pages.size} pages; only the first was read.") else emptyList()
             scan(file, extra, pending.call)
+        }
+        try {
+            worker.execute(job)
+        } catch (e: RejectedExecutionException) {
+            pending.call.reject("The plugin is shutting down.", SCAN_FAILED, e)
         }
     }
 

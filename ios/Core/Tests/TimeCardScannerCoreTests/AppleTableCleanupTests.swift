@@ -111,4 +111,52 @@ struct AppleTableCleanupTests {
         #expect(rows.count == 5)
         #expect(flags.isEmpty)
     }
+
+    // MARK: cells with no geometry (AppleTable.pixelRect returns .zero for an empty region)
+
+    /// Every cell without a region: the median row height is 0, and gap / median used to be NaN,
+    /// which trapped in Int(...).
+    @Test func rowsWithNoGeometryAreKeptAndDoNotCrash() {
+        let blank = AppleRow(texts: ["1", "14", "", ""], cells: Array(repeating: .zero, count: 4))
+        let blank2 = AppleRow(texts: ["2", "16", "", ""], cells: Array(repeating: .zero, count: 4))
+        let (rows, flags) = AppleTableCleanup.clean([blank, blank2])
+        #expect(rows.map { $0.texts[0] } == ["14", "16"])
+        #expect(flags.isEmpty)
+    }
+
+    /// A .zero cell must not stretch its row's rect to the origin (which made rows enormous).
+    @Test func aCellWithNoGeometryDoesNotStretchTheRow() {
+        var r = row(["1", "14", "", ""], y: 1000)
+        r.cells[2] = .zero
+        #expect(r.rect == CGRect(x: 100, y: 1000, width: 700, height: 160))
+    }
+
+    /// One row without geometry among normal rows: no bogus sliver, gap or insertion flags.
+    @Test func aRowWithNoGeometryDoesNotDisturbItsNeighbours() {
+        let nogeo = AppleRow(texts: ["2", "16", "", ""], cells: Array(repeating: .zero, count: 4))
+        let raw = [
+            row(["1", "14", "", ""], y: 0),
+            nogeo,
+            row(["3", "18", "", ""], y: 320),
+            row(["4", "20", "", ""], y: 480),
+        ]
+        let (rows, flags) = AppleTableCleanup.clean(raw)
+        #expect(rows.map { $0.texts[0] } == ["14", "16", "18", "20"])
+        #expect(flags.isEmpty)
+    }
+
+    /// The row without geometry fills one row of the gap; a second missing row is still found.
+    @Test func aGapAroundARowWithNoGeometryStillFindsTheMissingRows() {
+        let nogeo = AppleRow(texts: ["2", "16", "", ""], cells: Array(repeating: .zero, count: 4))
+        let raw = [
+            row(["1", "14", "", ""], y: 0),
+            nogeo,
+            // y=160 and y=320 are empty: the unmeasured row is one of them, one row is missing
+            row(["4", "20", "", ""], y: 480),
+            row(["5", "22", "", ""], y: 640),
+        ]
+        let (rows, flags) = AppleTableCleanup.clean(raw)
+        #expect(rows.count == 5)
+        #expect(flags.filter { $0.kind == .insertedGapRows }.count == 1)
+    }
 }

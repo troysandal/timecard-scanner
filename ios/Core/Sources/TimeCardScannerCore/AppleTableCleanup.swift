@@ -9,7 +9,16 @@ struct AppleRow {
     /// All cell rects (pixel space, top-left origin), same order as `texts`.
     var cells: [CGRect]
 
-    var rect: CGRect { cells.dropFirst().reduce(cells.first ?? .zero) { $0.union($1) } }
+    /// Bounding box of the cells that have a region. `AppleTable.pixelRect` returns `.zero` for a cell
+    /// Vision gave no region for; unioning that would stretch the row to the origin, so it is skipped.
+    /// `.zero` when no cell has geometry.
+    var rect: CGRect {
+        let measured = cells.filter { !$0.isEmpty }
+        return measured.dropFirst().reduce(measured.first ?? .zero) { $0.union($1) }
+    }
+
+    /// False when none of the row's cells has a region, so no geometry check can say anything about it.
+    var hasGeometry: Bool { !rect.isEmpty }
 }
 
 struct CleanRow {
@@ -78,12 +87,14 @@ enum AppleTableCleanup {
         }
         guard !data.isEmpty else { return ([], flags) }
 
-        let heights = data.map { $0.element.rect.height }.sorted()
-        let median = heights[heights.count / 2]
+        // Rows without geometry are kept as they are and take no part in the checks below. With no
+        // measurable row at all the median is 0 and the checks are skipped (gap / 0 would be NaN).
+        let heights = data.filter { $0.element.hasGeometry }.map { $0.element.rect.height }.sorted()
+        let median = heights.isEmpty ? 0 : heights[heights.count / 2]
 
         var kept: [(index: Int, row: AppleRow)] = []
         for (index, row) in data {
-            if row.rect.height < median * sliverFraction {
+            if median > 0, row.hasGeometry, row.rect.height < median * sliverFraction {
                 flags.append(ScanFlag(
                     kind: .droppedSliverRow,
                     detail: "ignored a \(Int(row.rect.height)) px sliver row (typical row \(Int(median)) px)"
@@ -94,12 +105,15 @@ enum AppleTableCleanup {
         }
 
         var out: [CleanRow] = []
-        for (i, item) in kept.enumerated() {
+        // The last row that has geometry, and how many rows without geometry came after it: those
+        // occupy part of the gap, so they are not "missing".
+        var lastMeasured: CGRect?
+        var unmeasuredSince = 0
+        for item in kept {
             let valueCells = Array(item.row.cells[1..<4])
-            if i > 0 {
-                let previous = kept[i - 1].row.rect
+            if median > 0, item.row.hasGeometry, let previous = lastMeasured {
                 let gap = item.row.rect.minY - previous.maxY
-                let missing = Int((gap / median).rounded())
+                let missing = Int((gap / median).rounded()) - unmeasuredSince
                 if missing >= 1 {
                     flags.append(ScanFlag(
                         kind: .insertedGapRows, row: out.count,
@@ -126,6 +140,12 @@ enum AppleTableCleanup {
                 checkpoint: Int(item.row.texts[0].trimmingCharacters(in: .whitespaces)),
                 sourceIndex: item.index
             ))
+            if item.row.hasGeometry {
+                lastMeasured = item.row.rect
+                unmeasuredSince = 0
+            } else {
+                unmeasuredSince += 1
+            }
         }
         return (out, flags)
     }

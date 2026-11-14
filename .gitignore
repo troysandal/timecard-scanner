@@ -1,0 +1,12 @@
+.DS_Store
+node_modules/
+dist/
+.build/
+.swiftpm/
+*.xcodeproj
+Package.resolved
+android/build/
+android/.gradle/
+android/local.properties
+.idea/
+*.iml

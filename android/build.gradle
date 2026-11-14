@@ -1,0 +1,92 @@
+// TimeCardScanner Capacitor plugin, Android side.
+//
+// One Gradle module (Capacitor includes a plugin's android/ folder as a single project) built from two
+// source trees:
+//   core/src/main  the reader: pure Kotlin, no Android or Capacitor imports. Its tests are in core/src/test
+//                  and run as this module's unit tests (./gradlew testDebugUnitTest).
+//   src/main       the Capacitor bridge: ML Kit text recognition, the document scanner, bitmaps, files.
+
+ext {
+    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
+}
+
+buildscript {
+    ext.kotlin_version = project.hasProperty("kotlin_version") ? rootProject.ext.kotlin_version : '2.2.20'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+apply plugin: 'com.android.library'
+// Android Gradle Plugin 9 compiles Kotlin itself; older ones need the Kotlin plugin.
+if (project.extensions.findByName('kotlin') == null) {
+    apply plugin: 'kotlin-android'
+}
+
+android {
+    namespace = "com.troysandal.timecardscanner.plugin"
+    compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
+    defaultConfig {
+        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 24
+        targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36
+        versionCode 1
+        versionName "1.0"
+    }
+    sourceSets {
+        main {
+            // Android Gradle Plugin 9 keeps Kotlin sources in their own set; older ones compile them from `java`.
+            if (delegate.hasProperty('kotlin')) {
+                kotlin.srcDirs += 'core/src/main/kotlin'
+            } else {
+                java.srcDirs += 'core/src/main/kotlin'
+            }
+            resources.srcDirs += 'core/src/main/resources' // digits.f32, the digit model's weights
+        }
+        test {
+            if (delegate.hasProperty('kotlin')) {
+                kotlin.srcDirs += 'core/src/test/kotlin'
+            } else {
+                java.srcDirs += 'core/src/test/kotlin'
+            }
+            resources.srcDirs += 'core/src/test/resources' // golden.json, the digit model's parity cases
+        }
+    }
+    lintOptions {
+        abortOnError = false
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation 'androidx.exifinterface:exifinterface:1.4.1'
+
+    // Text recognition with the Latin model bundled in the app: no Google Play services, no download.
+    // It reads the printed checkpoint numerals (row positions) and is the second opinion on each cell.
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
+    // The document scanner (camera UI, crop, straighten) is delivered by Google Play services and
+    // fetched once while online; isAvailable() says whether it can be used.
+    implementation 'com.google.android.gms:play-services-mlkit-document-scanner:16.0.0'
+
+    // Unit tests of the core (JVM). Android's own org.json is a stub there, so use the real one.
+    testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version"
+    testImplementation 'org.json:json:20250517'
+}

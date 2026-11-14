@@ -1,0 +1,49 @@
+{
+  "name": "timecard-scanner",
+  "version": "0.1.0",
+  "description": "Capacitor plugin (TimeCardScanner): photograph an enduro time card and read its table, offline, on iOS 26+ and Android.",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "files": [
+    "dist/",
+    "ios/Sources",
+    "ios/Core/Package.swift",
+    "ios/Core/Sources",
+    "Package.swift",
+    "android/build.gradle",
+    "android/src/main",
+    "android/core/src/main"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "verify:ios": "xcodebuild -scheme TimeCardScanner -destination generic/platform=iOS build",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build",
+    "verify:android": "cd android && ./gradlew testDebugUnitTest assembleDebug",
+    "verify:core-ios": "cd ios/Core && swift test"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/core": "^8.6.0",
+    "typescript": "^5.6.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/troysandal/timecard-scanner.git"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

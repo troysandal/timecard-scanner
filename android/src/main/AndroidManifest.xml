@@ -1,0 +1,3 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- No permissions: the document scanner runs in Google Play services, which owns the camera permission. -->
+</manifest>

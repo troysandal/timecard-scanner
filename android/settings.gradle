@@ -1,0 +1,4 @@
+// Standalone builds only (tests, assembleDebug from this folder). A host app builds this folder as a
+// subproject of its own settings and ignores this file.
+include ':capacitor-android'
+project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/android/capacitor')

@@ -24,7 +24,7 @@ public struct TableScan: Sendable, Codable, Equatable {
 @available(iOS 26, macOS 26, *)
 public enum TimeCardScanner {
     /// Bump when a change can alter the extracted table.
-    public static let pipelineVersion = "S1.1"
+    public static let pipelineVersion = "S1.2"
 
     /// Scans an upright photo of the table. Throws only if Vision fails; a
     /// photo with no table comes back with no rows and a `.noTable` flag.
@@ -60,8 +60,14 @@ public enum TimeCardScanner {
         let printed = cleaned.rows.map(\.checkpoint)
         flags += CheckpointCheck.flags(for: printed)
 
+        // Cells Vision left blank although they hold ink (it refuses bare strokes such as a lone `11`).
+        let cells = cleaned.rows.map(\.cells)
+        if let gray = InkCheck.gray(from: image) {
+            flags += InkCheck.flags(gray: gray, cells: cells, rows: rows)
+        }
+
         return TableScan(
-            rows: rows, rawText: raw, cells: cleaned.rows.map(\.cells),
+            rows: rows, rawText: raw, cells: cells,
             printedCheckpoints: printed, flags: flags, pipelineVersion: pipelineVersion
         )
     }

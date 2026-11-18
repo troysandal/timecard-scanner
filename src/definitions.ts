@@ -18,9 +18,10 @@ export interface Row {
   c2: string;
   c3: string;
   /**
-   * True when the scanner had a reason to doubt this row (see `warnings`, or a mapped character). On
-   * Android this includes any cell that is an unsure read, that its two readers disagree on, or that
-   * holds ink nothing was read from: have the user check flagged rows against the photo.
+   * True when the scanner had a reason to doubt this row (see `warnings`, or a mapped character). On both
+   * platforms this includes a cell that holds ink nothing was read from (it is left blank, never guessed);
+   * on Android also any cell that is an unsure read or that its two readers disagree on. Have the user
+   * check flagged rows against the photo.
    */
   flagged?: boolean;
 }

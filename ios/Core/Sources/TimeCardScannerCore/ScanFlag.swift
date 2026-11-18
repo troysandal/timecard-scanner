@@ -20,6 +20,9 @@ public struct ScanFlag: Sendable, Codable, Equatable {
         case charsetMapped
         /// A printed checkpoint number disagrees with the row's position.
         case checkpointMismatch
+        /// Vision returned this cell blank but a pixel check sees handwriting in it. Nothing was read or
+        /// filled in; the user should look at the cell.
+        case inkNotRead
     }
 
     public var kind: Kind

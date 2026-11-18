@@ -13,6 +13,9 @@ public struct TableScan: Sendable, Codable, Equatable {
     /// The printed checkpoint number Vision read for each row, if any.
     public var printedCheckpoints: [Int?]
     public var flags: [ScanFlag]
+    /// Digit reads offered for cells Vision left blank that hold ink (those flagged `inkNotRead`). Never part
+    /// of `rows`: a suggestion is only for the user to accept.
+    public var suggestions: [DigitSuggestion] = []
     public var pipelineVersion: String
 
     /// Flags attached to `row`.
@@ -24,7 +27,7 @@ public struct TableScan: Sendable, Codable, Equatable {
 @available(iOS 26, macOS 26, *)
 public enum TimeCardScanner {
     /// Bump when a change can alter the extracted table.
-    public static let pipelineVersion = "S1.2"
+    public static let pipelineVersion = "S1.3"
 
     /// Scans an upright photo of the table. Throws only if Vision fails; a
     /// photo with no table comes back with no rows and a `.noTable` flag.
@@ -62,13 +65,17 @@ public enum TimeCardScanner {
 
         // Cells Vision left blank although they hold ink (it refuses bare strokes such as a lone `11`).
         let cells = cleaned.rows.map(\.cells)
+        var suggestions: [DigitSuggestion] = []
         if let gray = InkCheck.gray(from: image) {
-            flags += InkCheck.flags(gray: gray, cells: cells, rows: rows)
+            let inkFlags = InkCheck.flags(gray: gray, cells: cells, rows: rows)
+            flags += inkFlags
+            // ...and a digit read offered for each, for the user to accept. Never written into `rows`.
+            suggestions = DigitSuggester.suggestions(gray: gray, cells: cells, flags: inkFlags)
         }
 
         return TableScan(
             rows: rows, rawText: raw, cells: cells,
-            printedCheckpoints: printed, flags: flags, pipelineVersion: pipelineVersion
+            printedCheckpoints: printed, flags: flags, suggestions: suggestions, pipelineVersion: pipelineVersion
         )
     }
 }

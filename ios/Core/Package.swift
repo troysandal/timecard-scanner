@@ -12,7 +12,7 @@ let package = Package(
         .library(name: "TimeCardScannerCore", targets: ["TimeCardScannerCore"]),
     ],
     targets: [
-        .target(name: "TimeCardScannerCore"),
-        .testTarget(name: "TimeCardScannerCoreTests", dependencies: ["TimeCardScannerCore"]),
+        .target(name: "TimeCardScannerCore", resources: [.copy("Resources/digits.f32")]),
+        .testTarget(name: "TimeCardScannerCoreTests", dependencies: ["TimeCardScannerCore"], resources: [.copy("Resources/golden.json")]),
     ]
 )

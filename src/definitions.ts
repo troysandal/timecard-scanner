@@ -24,6 +24,14 @@ export interface Row {
    * check flagged rows against the photo.
    */
   flagged?: boolean;
+  /**
+   * iOS only (absent on Android): a digit read offered for a cell the scanner left blank although it holds
+   * ink. It is a suggestion, not a value: it is never written into `c1`..`c3`, and the row stays `flagged`.
+   * Show it next to the blank cell and apply it only after the user accepts it, cell by cell: do not
+   * pre-fill it, and do not offer "confirm all" over rows that carry suggestions. About 7 in 10 are right
+   * (measured on one carbon-copy card), so a wrong one is routine; log accepts and edits.
+   */
+  suggested?: { c1?: string; c2?: string; c3?: string };
 }
 
 export interface ScanResult {

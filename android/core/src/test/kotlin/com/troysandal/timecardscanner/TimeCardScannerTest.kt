@@ -69,6 +69,36 @@ class TimeCardScannerTest {
         assertEquals(ScanFlag.Kind.INK_NOT_READ, flag?.first)
     }
 
+    @Test fun aFaintConfidentReadIsDroppedOnADarkCardButKeptAndFlaggedOnAFaintOne() {
+        val faint = model("37", 1f, peak = 0.33f)
+        assertEquals("", TimeCardScanner.decide(faint, "", ink).first) // dark-card thresholds reject the weak peak, and the recognizer has nothing
+        val th = TimeCardScanner.Thresholds.forStrength(0.34f)
+        val (text, flag) = TimeCardScanner.decide(faint, "", ink, th)
+        assertEquals("37", text)
+        assertEquals(ScanFlag.Kind.UNSURE_VALUE, flag?.first)
+    }
+
+    @Test fun aFaintReadTheRecognizerAgreesWithIsNotFlagged() {
+        val th = TimeCardScanner.Thresholds.forStrength(0.34f)
+        val (text, flag) = TimeCardScanner.decide(model("37", 1f, peak = 0.33f), "37", ink, th)
+        assertEquals("37", text)
+        assertNull(flag)
+    }
+
+    @Test fun relaxedThresholdsScaleWithStrengthAndStayOnTheEvaluationsSteps() {
+        val th = TimeCardScanner.Thresholds.forStrength(0.34f)
+        assertEquals(0.8f * 0.34f, th.peakMin, 1e-6f)
+        assertEquals(0.3f, th.confMin)
+        assertEquals(20, th.inkDelta) // 45 * 0.34 / 0.8 = 19.1 -> nearest step 20
+        assertEquals(10, TimeCardScanner.Thresholds.forStrength(0.05f).inkDelta)
+    }
+
+    @Test fun cardStrengthNeedsEnoughInkedCells() {
+        assertEquals(1f, TimeCardScanner.cardStrength(listOf(0.3f, 0.3f, 0.3f)))
+        assertEquals(0.35f, TimeCardScanner.cardStrength(List(10) { 0.35f }))
+        assertEquals(0.9f, TimeCardScanner.cardStrength(List(9) { 0.3f } + 0.9f), 1e-6f)
+    }
+
     @Test fun grayMatchesTheEvaluationsConversion() {
         val gray = TimeCardScanner.grayFromArgb(intArrayOf(0xFF000000.toInt(), 0xFFFFFFFF.toInt(), 0xFFFF0000.toInt(), 0xFF00FF00.toInt(), 0xFF0000FF.toInt()))
         assertEquals(listOf(0, 255, 76, 150, 29), gray.map { it.toInt() and 0xFF })

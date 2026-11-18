@@ -69,7 +69,7 @@ data class TableScan(
  */
 object TimeCardScanner {
     /** Bump when a change can alter the extracted table. */
-    const val pipelineVersion = "A1.1"
+    const val pipelineVersion = "A1.2"
 
     const val PEAK_MIN = 0.7f
     const val CONF_MIN = 0.5f
@@ -88,6 +88,34 @@ object TimeCardScanner {
     const val CROP_INSET = 0.055
     const val INK_INSET = 0.07
     const val INK_DELTA = 45
+
+    /**
+     * The three numbers that depend on how dark the writing is. [DEFAULT] is for dark ink; [forStrength] relaxes them
+     * for a faint card (carbon copy, pencil), where the model's peak is 0.3 instead of 0.9 and the fixed values
+     * would throw away correct reads and miss the faintest cells.
+     */
+    internal class Thresholds(val peakMin: Float, val confMin: Float, val inkDelta: Int, val relaxed: Boolean) {
+        companion object {
+            val DEFAULT = Thresholds(PEAK_MIN, CONF_MIN, INK_DELTA, false)
+            fun forStrength(strength: Float): Thresholds {
+                val want = INK_DELTA * minOf(1f, strength / RELATIVE_BELOW)
+                val delta = INK_DELTAS.minByOrNull { Math.abs(it - want) }!!
+                return Thresholds(RELATIVE_GATE * strength, RELAXED_CONF_MIN, delta, true)
+            }
+        }
+    }
+    /** Ink-darkness steps a relaxed card may use; the evaluation sweeps exactly these. */
+    private val INK_DELTAS = intArrayOf(10, 15, 20, 25, 30, 35, 40, 45)
+    /** A card whose strength (90th percentile of the model's peak over inked cells) is below this is faint. */
+    const val RELATIVE_BELOW = 0.8f
+    /** On a faint card the peak gate is this fraction of the card's strength (in-sample: one card, four shots). */
+    const val RELATIVE_GATE = 0.8f
+    const val RELAXED_CONF_MIN = 0.3f
+    /** Fewer inked cells than this say nothing reliable about the card's strength (one stray mark would set it). */
+    const val STRENGTH_MIN_CELLS = 6
+    /** Relax only when at least this share (3/4) of the printed checkpoint numerals were read: a blurred card fails that. */
+    private const val LEGIBLE_NUM = 3
+    private const val LEGIBLE_DEN = 4
 
     // The peak gate is applied here, not in the reader, so a weak read can still be compared with the recognizer's.
     private val defaultReader by lazy { GlyphReader(DigitNet.load(), peakMin = 0f) }
@@ -112,19 +140,41 @@ object TimeCardScanner {
         val grid = Grid(rowEdges, columns.edges)
         val recognized = CellAssigner.assign(symbols, grid)
 
+        // Pass 1: ink at the fixed darkness, and the digit model on every cell that shows any.
+        class Work(val box: Box, val inset: Int, val cropInset: Int, var ink: Double, var model: GlyphRead?)
+        val work = ArrayList<Work>(grid.rows * 3)
+        for (r in 0 until grid.rows) {
+            val rowH = grid.rowEdges[r + 1] - grid.rowEdges[r]
+            for (k in 0 until 3) {
+                val box = Box(grid.colEdges[k + 1], grid.rowEdges[r], grid.colEdges[k + 2], grid.rowEdges[r + 1])
+                val inset = Math.round(INK_INSET * rowH).toInt()
+                val cropInset = Math.round(CROP_INSET * rowH).toInt()
+                val ink = InkDetector.score(gray, width, height, box.left, box.top, box.right, box.bottom, inset = inset, delta = INK_DELTA)
+                // most cells are empty: the digit model, by far the slowest step, is not run on them
+                work += Work(box, inset, cropInset, ink, if (ink < INK_SKIP) null else readCell(gray, width, height, box, cropInset, reader))
+            }
+        }
+
+        // Pass 2, only for a faint card: re-score the ink with a lighter darkness bar and read the newly inked cells.
+        val legible = anchors.found * LEGIBLE_DEN >= anchors.rowCount * LEGIBLE_NUM
+        val strength = if (legible) cardStrength(work.mapNotNull { it.model?.peak }) else 1f
+        val th = if (strength < RELATIVE_BELOW) Thresholds.forStrength(strength) else Thresholds.DEFAULT
+        if (th.relaxed) {
+            for (w in work) {
+                w.ink = InkDetector.score(gray, width, height, w.box.left, w.box.top, w.box.right, w.box.bottom, inset = w.inset, delta = th.inkDelta)
+                if (w.model == null && w.ink >= INK_SKIP) w.model = readCell(gray, width, height, w.box, w.cropInset, reader)
+            }
+        }
+
         val rows = ArrayList<List<String>>(grid.rows)
         val cells = ArrayList<List<Box>>(grid.rows)
         for (r in 0 until grid.rows) {
             val rowTexts = ArrayList<String>(3)
             val rowBoxes = ArrayList<Box>(3)
-            val rowH = grid.rowEdges[r + 1] - grid.rowEdges[r]
             for (k in 0 until 3) {
-                val box = Box(grid.colEdges[k + 1], grid.rowEdges[r], grid.colEdges[k + 2], grid.rowEdges[r + 1])
-                rowBoxes += box
-                val ink = InkDetector.score(gray, width, height, box.left, box.top, box.right, box.bottom, inset = Math.round(INK_INSET * rowH).toInt(), delta = INK_DELTA)
-                // most cells are empty: the digit model, by far the slowest step, is not run on them
-                val model = if (ink < INK_SKIP) NOTHING_READ else readCell(gray, width, height, box, Math.round(CROP_INSET * rowH).toInt(), reader)
-                val (text, flag) = decide(model, recognized[r][k].text, ink)
+                val w = work[r * 3 + k]
+                rowBoxes += w.box
+                val (text, flag) = decide(w.model ?: NOTHING_READ, recognized[r][k].text, w.ink, th)
                 rowTexts += text
                 if (flag != null) flags += ScanFlag(flag.first, r, k, flag.second)
             }
@@ -132,6 +182,13 @@ object TimeCardScanner {
             cells += rowBoxes
         }
         return TableScan(rows, cells, flags, pipelineVersion)
+    }
+
+    /** 90th percentile of the model's peak over the cells it read; 1 (dark ink, nothing to relax) with too few to tell. */
+    internal fun cardStrength(peaks: List<Float>): Float {
+        if (peaks.size < STRENGTH_MIN_CELLS) return 1f
+        val sorted = peaks.sorted()
+        return sorted[(sorted.size * 0.9).toInt().coerceAtMost(sorted.size - 1)]
     }
 
     /**
@@ -155,8 +212,8 @@ object TimeCardScanner {
     }
 
     /** One cell's final text and, when the user should check it, the reason. */
-    internal fun decide(model: GlyphRead, recognized: String, ink: Double): Pair<String, Pair<ScanFlag.Kind, String>?> {
-        val modelOk = model.peak >= PEAK_MIN && model.text.isNotEmpty() && model.confidence >= CONF_MIN
+    internal fun decide(model: GlyphRead, recognized: String, ink: Double, th: Thresholds = Thresholds.DEFAULT): Pair<String, Pair<ScanFlag.Kind, String>?> {
+        val modelOk = model.peak >= th.peakMin && model.text.isNotEmpty() && model.confidence >= th.confMin
         val sure = modelOk && model.confidence >= SURE
         var text = when {
             sure -> model.text
@@ -173,6 +230,10 @@ object TimeCardScanner {
         if (text == model.text && (model.suspect || model.widest > WIDE_GLYPH)) {
             flag = ScanFlag.Kind.SUSPECT_SHAPE to
                 if (model.suspect) "a line crosses the writing, or a blob was cut into digits" else "a wide glyph may be touching digits"
+        }
+        // a value the relaxed gate let through, with no second reader to back it up, is only a suggestion
+        if (th.relaxed && text.isNotEmpty() && text == model.text && model.peak < PEAK_MIN && recognized != model.text && flag == null) {
+            flag = ScanFlag.Kind.UNSURE_VALUE to "read on a faint card (ink strength ${"%.2f".format(model.peak)}): \"${model.text}\""
         }
         if (ink < INK_MIN) text = ""
         if (text.isEmpty()) {

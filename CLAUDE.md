@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `timecard-scanner` is a Capacitor 8 plugin (plugin id `TimeCardScanner`) that photographs a paper enduro time card and returns its checkpoint table as `rows` of three strings (`c1`,`c2`,`c3`, plus `flagged`). Offline, on device. It is a self-contained repo: nothing outside it is needed to build or test.
 
-The research/evaluation side (card corpus with rider data, Mac scoring CLI, test-bench apps, digit-model training) lives in a separate private repo, `timecard-scanner-bench`, which consumes this repo as a git submodule at `plugin/`. Reader changes are made here and gated there by corpus score (the Android reader must still score 344/358 handwritten cells via `./gradlew :eval:run --args="corpus scan ocr"` in the bench's `android/`). No corpus images are in this repo.
+The research/evaluation side (card corpus with rider data, Mac scoring CLI, test-bench apps, digit-model training) lives in a separate private repo, `timecard-scanner-bench`, which consumes this repo as a git submodule at `plugin/`. Reader changes are made here and gated there by corpus score (the Android reader must still score 345/358 handwritten cells via `./gradlew :eval:run --args="corpus scan ocr"` in the bench's `android/`). No corpus images are in this repo.
 
 ## Commands
 

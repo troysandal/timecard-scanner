@@ -81,7 +81,7 @@ In the scanner choose **Manual** shutter, then Save. Hold the phone about
 - **Flags matter more than on iOS.** A row is `flagged` when any of its cells is an unsure
   read, a value the two readers disagree on, a suspect shape (a line through the writing,
   possibly touching digits), or ink that nothing was read from. On the 26 test cards that
-  left 2 wrong cells unflagged (344 of 358 written cells were read correctly), with about 2
+  left 2 wrong cells unflagged (345 of 358 written cells were read correctly), with about 2
   flagged cells per card that were in fact right. A written dot (`9.26`) is read as `:`.
   `warnings` names the row, column and reason.
 - **Tried so far** only on an emulator: all three methods and the `CANCELLED`, `NO_TABLE`

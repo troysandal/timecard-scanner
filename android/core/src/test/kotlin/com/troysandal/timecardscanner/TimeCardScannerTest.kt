@@ -99,6 +99,22 @@ class TimeCardScannerTest {
         assertEquals(0.9f, TimeCardScanner.cardStrength(List(9) { 0.3f } + 0.9f), 1e-6f)
     }
 
+    @Test fun flaggedCellsMarkTheCellsFlagsAndARowFlagMarksAllThree() {
+        val scan = TableScan(
+            listOf(listOf("", "", ""), listOf("", "", ""), listOf("", "", "")), emptyList(),
+            listOf(
+                ScanFlag(ScanFlag.Kind.INK_NOT_READ, row = 1, column = 2, detail = ""),
+                ScanFlag(ScanFlag.Kind.UNSURE_VALUE, row = 1, column = 0, detail = ""),
+                ScanFlag(ScanFlag.Kind.FEW_ROW_ANCHORS, detail = ""), // table level: on no row
+            ),
+            "t",
+        )
+        assertEquals(listOf(true, false, true), scan.flaggedCells(1))
+        assertEquals(listOf(false, false, false), scan.flaggedCells(0))
+        val rowLevel = scan.copy(flags = listOf(ScanFlag(ScanFlag.Kind.UNSURE_VALUE, row = 2, detail = "")))
+        assertEquals(listOf(true, true, true), rowLevel.flaggedCells(2))
+    }
+
     @Test fun grayMatchesTheEvaluationsConversion() {
         val gray = TimeCardScanner.grayFromArgb(intArrayOf(0xFF000000.toInt(), 0xFFFFFFFF.toInt(), 0xFFFF0000.toInt(), 0xFF00FF00.toInt(), 0xFF0000FF.toInt()))
         assertEquals(listOf(0, 255, 76, 150, 29), gray.map { it.toInt() and 0xFF })

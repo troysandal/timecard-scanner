@@ -20,6 +20,17 @@ public struct TableScan: Sendable, Codable, Equatable {
 
     /// Flags attached to `row`.
     public func flags(forRow row: Int) -> [ScanFlag] { flags.filter { $0.row == row } }
+
+    /// Which of the row's three value cells the user should check. A cell's own flags mark that cell; a flag on
+    /// the row with no cell (a checkpoint mismatch, a malformed row) marks all three. Mirrors the Kotlin
+    /// `TableScan.flaggedCells`.
+    public func flaggedCells(forRow row: Int) -> [Bool] {
+        var out = [false, false, false]
+        for f in flags(forRow: row) {
+            if let c = f.column, (0..<3).contains(c) { out[c] = true } else { out = [true, true, true] }
+        }
+        return out
+    }
 }
 
 /// S1: Apple's document-table detector, repaired by `AppleTableCleanup`, with

@@ -139,7 +139,7 @@ public class TimeCardScannerPlugin: CAPPlugin, CAPBridgedPlugin {
     private static func result(for scan: TableScan, file: URL, extraWarnings: [String], webPath: String) -> [String: Any] {
         let rows: [[String: Any]] = scan.rows.enumerated().map { index, row in
             let cells = row + Array(repeating: "", count: max(0, 3 - row.count))
-            var out: [String: Any] = ["c1": cells[0], "c2": cells[1], "c3": cells[2], "flagged": !scan.flags(forRow: index).isEmpty]
+            var out: [String: Any] = ["c1": cells[0], "c2": cells[1], "c3": cells[2], "flagged": scan.flaggedCells(forRow: index)]
             // Offered for cells left blank that hold ink; never part of c1...c3.
             var suggested: [String: String] = [:]
             for s in scan.suggestions where s.row == index && (0..<3).contains(s.column) { suggested["c\(s.column + 1)"] = s.text }

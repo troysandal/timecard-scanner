@@ -45,6 +45,19 @@ data class TableScan(
 
     /** Flags attached to [row] (its cells' flags included). */
     fun flags(forRow: Int) = flags.filter { it.row == forRow }
+
+    /**
+     * Which of the row's three value cells the user should check. A cell's own flags mark that cell; a flag on
+     * the row with no cell marks all three. Mirrors the Swift `TableScan.flaggedCells(forRow:)`.
+     */
+    fun flaggedCells(forRow: Int): List<Boolean> {
+        val out = BooleanArray(3)
+        for (f in flags(forRow)) {
+            val c = f.column
+            if (c != null && c in 0..2) out[c] = true else out.fill(true)
+        }
+        return out.toList()
+    }
 }
 
 /**

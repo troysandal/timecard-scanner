@@ -18,15 +18,20 @@ export interface Row {
   c2: string;
   c3: string;
   /**
-   * True when the scanner had a reason to doubt this row (see `warnings`, or a mapped character). On both
-   * platforms this includes a cell that holds ink nothing was read from (it is left blank, never guessed);
-   * on Android also any cell that is an unsure read or that its two readers disagree on. Have the user
-   * check flagged rows against the photo.
+   * Which cells the scanner had a reason to doubt, aligned with `c1`..`c3`: `[true, false, false]` means check
+   * `c1`. Any `true` makes the row one to check (see `warnings`). A cell is flagged when it holds ink nothing was
+   * read from (it is left blank, never guessed), when a character was mapped to a digit, and on Android also when
+   * it is an unsure read or its two readers disagree. A doubt about the whole row with no single cell (a row
+   * that was inserted, or whose checkpoint number disagrees) flags all three. Have the user check flagged cells
+   * against the photo.
+   *
+   * Breaking change in 0.4.0: this was a single `boolean` for the row. An array is always truthy, so test
+   * `row.flagged.some(Boolean)` where you used `row.flagged`.
    */
-  flagged?: boolean;
+  flagged: [boolean, boolean, boolean];
   /**
    * iOS only (absent on Android): a digit read offered for a cell the scanner left blank although it holds
-   * ink. It is a suggestion, not a value: it is never written into `c1`..`c3`, and the row stays `flagged`.
+   * ink. It is a suggestion, not a value: it is never written into `c1`..`c3`, and the cell stays flagged.
    * Show it next to the blank cell and apply it only after the user accepts it, cell by cell: do not
    * pre-fill it, and do not offer "confirm all" over rows that carry suggestions. About 7 in 10 are right
    * (measured on one carbon-copy card), so a wrong one is routine; log accepts and edits.

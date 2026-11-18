@@ -151,7 +151,7 @@ class TimeCardScannerPlugin : Plugin() {
         for ((index, row) in scan.rows.withIndex()) {
             rows.put(
                 JSObject().put("c1", row.getOrElse(0) { "" }).put("c2", row.getOrElse(1) { "" }).put("c3", row.getOrElse(2) { "" })
-                    .put("flagged", scan.flags(index).isNotEmpty())
+                    .put("flagged", JSArray().also { a -> scan.flaggedCells(index).forEach { a.put(it) } })
             )
         }
         val warnings = JSArray()

@@ -38,7 +38,7 @@ Three layers; the reader differs per platform, the JS API and rejection codes ar
   - `android/src/main` — the Capacitor bridge: `TimeCardScannerPlugin`, `ImageScanner` (decode upright, ML Kit OCR, hand to core), `DocumentCapture` (Google Play services document scanner; `isAvailable()` is true only once that module is downloaded).
   - Core tests (`android/core/src/test`) are compiled into this module's `testDebugUnitTest`; `golden.json` holds digit-net parity cases against the Python reference in the bench repo.
 
-Contract to preserve: cells contain only `0-9` and `:` (colons are meaningful, never stripped; nothing is interpreted as a time); `rows.length` is the card's printed row count (10/12/15/18); `flagged` marks rows the scanner doubts and is the main safety net (roughly 18% of filled cells are wrong on iOS, ~4% on Android, in-sample). There is deliberately no review screen in the plugin.
+Contract to preserve: cells contain only `0-9` and `:` (colons are meaningful, never stripped; nothing is interpreted as a time); `rows.length` is the card's printed row count (10/12/15/18); `flagged` is a `[boolean, boolean, boolean]` per row (one per value cell; a row-level doubt flags all three; a breaking change from a single boolean in 0.4.0) and is the main safety net (roughly 18% of filled cells are wrong on iOS, ~4% on Android, in-sample). There is deliberately no review screen in the plugin.
 
 ## Gradle versions
 

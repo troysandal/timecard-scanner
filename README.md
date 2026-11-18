@@ -43,7 +43,7 @@ if ((await TimeCardScanner.isAvailable()).available) {
       folder: 'cards',
     });
     // image.webPath → <img src>; image.path → @capacitor/filesystem
-    // rows[i] = { c1, c2, c3, flagged? }, '' for a blank cell
+    // rows[i] = { c1, c2, c3, flagged: [bool, bool, bool], suggested? }, '' for a blank cell
   } catch (e: any) {
     if (e.code === 'CANCELLED') return; // user closed the scanner
     if (e.code === 'NO_TABLE') { /* e.data.image holds the photo */ }
@@ -63,8 +63,9 @@ In the scanner choose **Manual** shutter, then Save. Hold the phone about
   never stripped. Nothing is interpreted as a time.
 - `rows.length` is the printed row count of the card (10/12/15/18), discovered
   from the photo.
-- `flagged` marks rows the scanner doubts (a character was mapped to a digit, a
-  row was inserted or its checkpoint number disagrees). Expect roughly one in
+- `flagged` is one boolean per cell (`c1`..`c3`) the scanner doubts: a character was mapped to a digit, or
+  the cell holds ink nothing was read from. A row that was inserted or whose checkpoint number disagrees flags
+  all three. (Before 0.4.0 it was one boolean per row.) Expect roughly one in
   five filled cells to be wrong: let the user edit.
 
 ## Android
@@ -78,7 +79,7 @@ In the scanner choose **Manual** shutter, then Save. Hold the phone about
 - **Photo location:** `directory` defaults to `'DATA'` on Android (the app's files
   directory). `'DOCUMENTS'` is the shared Documents folder, as in `@capacitor/filesystem`,
   and needs storage permission.
-- **Flags matter more than on iOS.** A row is `flagged` when any of its cells is an unsure
+- **Flags matter more than on iOS.** A cell is `flagged` when it is an unsure
   read, a value the two readers disagree on, a suspect shape (a line through the writing,
   possibly touching digits), or ink that nothing was read from. On the 26 test cards that
   left 2 wrong cells unflagged (345 of 358 written cells were read correctly), with about 2

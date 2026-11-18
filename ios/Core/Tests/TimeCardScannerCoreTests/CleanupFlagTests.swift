@@ -91,3 +91,29 @@ struct CharsetTests {
         #expect(Charset.normalize("1~4").text == "14")
     }
 }
+
+struct FlaggedCellsTests {
+    private func scan(_ flags: [ScanFlag]) -> TableScan {
+        TableScan(rows: [["", "", ""], ["", "", ""]], rawText: [], cells: [], printedCheckpoints: [], flags: flags, pipelineVersion: "t")
+    }
+
+    @Test func aCellFlagMarksOnlyThatCell() {
+        let s = scan([ScanFlag(kind: .inkNotRead, row: 1, column: 2, detail: "")])
+        #expect(s.flaggedCells(forRow: 1) == [false, false, true])
+        #expect(s.flaggedCells(forRow: 0) == [false, false, false])
+    }
+
+    @Test func aRowFlagWithNoCellMarksAllThree() {
+        #expect(scan([ScanFlag(kind: .checkpointMismatch, row: 0, detail: "")]).flaggedCells(forRow: 0) == [true, true, true])
+    }
+
+    @Test func flagsAccumulateAndTableLevelFlagsAreIgnored() {
+        let s = scan([
+            ScanFlag(kind: .inkNotRead, row: 0, column: 0, detail: ""),
+            ScanFlag(kind: .charsetMapped, row: 0, column: 1, detail: ""),
+            ScanFlag(kind: .multipleTables, detail: ""),
+        ])
+        #expect(s.flaggedCells(forRow: 0) == [true, true, false])
+        #expect(s.flaggedCells(forRow: 1) == [false, false, false])
+    }
+}

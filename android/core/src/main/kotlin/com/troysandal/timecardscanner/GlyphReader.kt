@@ -63,6 +63,12 @@ class GlyphReader(
      * camera or scanner resolution. 0 = use the crop as it is (the Python original).
      */
     val normHeight: Int = 140,
+    /**
+     * Lowest ink level (0..1, how much darker than the paper) a pixel may have and still count as writing: the
+     * threshold is the larger of Otsu's and this. 0.18 suits dark ink. On faint ink (peak ~0.3) it cuts the thin
+     * parts of strokes, which fall apart into pieces that can pair up as stray colons, so a faint card lowers it.
+     */
+    val inkFloor: Float = 0.18f,
 ) {
 
     /** [gray] is a [h] x [w] crop, row-major, 0 = black .. 255 = white. */
@@ -302,7 +308,7 @@ class GlyphReader(
     }
 
     private fun segment(ink: FloatArray, w: Int, h: Int, ruleRuns: MutableList<IntArray>? = null, pieces: MutableList<IntArray>? = null): List<Comp> {
-        val thr = max(otsu(ink), 0.18f)
+        val thr = max(otsu(ink), inkFloor)
         val on = BooleanArray(w * h) { ink[it] > thr }
         val nearRule = if (stripRules) eraseRules(on, w, h, ruleRuns) else BooleanArray(h)
         val labels = IntArray(w * h)
@@ -508,7 +514,7 @@ class GlyphReader(
     companion object {
         /** The reader exactly as training/evaluate.py behaves, for tools/parity. */
         fun pythonParity(net: DigitNet, peakMin: Float = 0.88f) =
-            GlyphReader(net, peakMin, stripRules = false, splitAspect = 0.95, splitPitch = 0.62, splitByCellHeight = false, readColons = false, dropSpecks = false, normHeight = 0)
+            GlyphReader(net, peakMin, stripRules = false, splitAspect = 0.95, splitPitch = 0.62, splitByCellHeight = false, readColons = false, dropSpecks = false, normHeight = 0, inkFloor = 0.18f)
 
         private const val PRECISION = 22
         private const val RULE_MIN_WIDTH = 0.45

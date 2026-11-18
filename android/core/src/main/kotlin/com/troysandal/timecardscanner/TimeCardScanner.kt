@@ -118,7 +118,12 @@ object TimeCardScanner {
     private const val LEGIBLE_DEN = 4
 
     // The peak gate is applied here, not in the reader, so a weak read can still be compared with the recognizer's.
-    private val defaultReader by lazy { GlyphReader(DigitNet.load(), peakMin = 0f) }
+    private val defaultReader by lazy { GlyphReader(DigitNet.load(), peakMin = 0f, inkFloor = INK_FLOOR) }
+    /**
+     * The reader's stroke floor. 0.14 instead of the reader's 0.18: the same on dark ink (corpus and webcam scores
+     * identical), and on faint ink it keeps thin strokes whole, so fewer fall into pieces that pair as stray colons.
+     */
+    const val INK_FLOOR = 0.14f
 
     /**
      * [gray] is the upright photo, row-major, one byte per pixel (0 = black);

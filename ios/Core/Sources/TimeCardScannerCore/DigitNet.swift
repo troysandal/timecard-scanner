@@ -46,24 +46,44 @@ final class DigitNet: Sendable {
     }
 
     /// Raw logits for a 28x28 image (row-major, values 0...1).
+    ///
+    /// The loops are plain `while` loops over unsafe buffers, in the order of the Kotlin original: `for i in 0..<n` goes
+    /// through a generic range iterator that an unoptimized (Debug) build resolves through the runtime on every
+    /// step (about 100x slower there). The arithmetic and its order are unchanged, so the result is identical.
     func logits(_ img: [Float]) -> [Float] {
         precondition(img.count == 784)
         var x = pool(conv(img, 1, 16, 28, c1w, c1b), 16, 28)
         x = pool(conv(x, 16, 32, 14, c2w, c2b), 32, 14)
         x = pool(conv(x, 32, 64, 7, c3w, c3b), 64, 7)
         var h = [Float](repeating: 0, count: 96)
-        for o in 0..<96 {
-            var s = p[f1b + o]
-            let base = f1w + o * 576
-            for i in 0..<576 { s += p[base + i] * x[i] }
-            h[o] = s > 0 ? s : 0
-        }
         var out = [Float](repeating: 0, count: 10)
-        for o in 0..<10 {
-            var s = p[f2b + o]
-            let base = f2w + o * 96
-            for i in 0..<96 { s += p[base + i] * h[i] }
-            out[o] = s
+        p.withUnsafeBufferPointer { pp in
+            x.withUnsafeBufferPointer { xp in
+                h.withUnsafeMutableBufferPointer { hp in
+                    var o = 0
+                    while o < 96 {
+                        var s = pp[f1b + o]
+                        let base = f1w + o * 576
+                        var i = 0
+                        while i < 576 { s += pp[base + i] * xp[i]; i += 1 }
+                        hp[o] = s > 0 ? s : 0
+                        o += 1
+                    }
+                }
+            }
+            h.withUnsafeBufferPointer { hp in
+                out.withUnsafeMutableBufferPointer { op in
+                    var o = 0
+                    while o < 10 {
+                        var s = pp[f2b + o]
+                        let base = f2w + o * 96
+                        var i = 0
+                        while i < 96 { s += pp[base + i] * hp[i]; i += 1 }
+                        op[o] = s
+                        o += 1
+                    }
+                }
+            }
         }
         return out
     }
@@ -80,24 +100,42 @@ final class DigitNet: Sendable {
     /// 3x3 conv, zero padding 1, then ReLU. Input/outputs are channel-major (c, y, x).
     private func conv(_ x: [Float], _ cin: Int, _ cout: Int, _ size: Int, _ w: Int, _ b: Int) -> [Float] {
         var out = [Float](repeating: 0, count: cout * size * size)
-        for o in 0..<cout {
-            for y in 0..<size {
-                for xx in 0..<size {
-                    var s = p[b + o]
-                    for c in 0..<cin {
-                        let wb = w + (o * cin + c) * 9
-                        let xb = c * size * size
-                        for ky in 0..<3 {
-                            let yy = y + ky - 1
-                            if yy < 0 || yy >= size { continue }
-                            for kx in 0..<3 {
-                                let xi = xx + kx - 1
-                                if xi < 0 || xi >= size { continue }
-                                s += p[wb + ky * 3 + kx] * x[xb + yy * size + xi]
+        p.withUnsafeBufferPointer { pp in
+            x.withUnsafeBufferPointer { xp in
+                out.withUnsafeMutableBufferPointer { op in
+                    var o = 0
+                    while o < cout {
+                        var y = 0
+                        while y < size {
+                            var xx = 0
+                            while xx < size {
+                                var s = pp[b + o]
+                                var c = 0
+                                while c < cin {
+                                    let wb = w + (o * cin + c) * 9
+                                    let xb = c * size * size
+                                    var ky = 0
+                                    while ky < 3 {
+                                        let yy = y + ky - 1
+                                        if yy >= 0 && yy < size {
+                                            var kx = 0
+                                            while kx < 3 {
+                                                let xi = xx + kx - 1
+                                                if xi >= 0 && xi < size { s += pp[wb + ky * 3 + kx] * xp[xb + yy * size + xi] }
+                                                kx += 1
+                                            }
+                                        }
+                                        ky += 1
+                                    }
+                                    c += 1
+                                }
+                                op[(o * size + y) * size + xx] = s > 0 ? s : 0
+                                xx += 1
                             }
+                            y += 1
                         }
+                        o += 1
                     }
-                    out[(o * size + y) * size + xx] = s > 0 ? s : 0
                 }
             }
         }
@@ -108,11 +146,21 @@ final class DigitNet: Sendable {
     private func pool(_ x: [Float], _ ch: Int, _ size: Int) -> [Float] {
         let n = size / 2
         var out = [Float](repeating: 0, count: ch * n * n)
-        for c in 0..<ch {
-            for y in 0..<n {
-                for xx in 0..<n {
-                    let b = c * size * size + 2 * y * size + 2 * xx
-                    out[(c * n + y) * n + xx] = max(max(x[b], x[b + 1]), max(x[b + size], x[b + size + 1]))
+        x.withUnsafeBufferPointer { xp in
+            out.withUnsafeMutableBufferPointer { op in
+                var c = 0
+                while c < ch {
+                    var y = 0
+                    while y < n {
+                        var xx = 0
+                        while xx < n {
+                            let b = c * size * size + 2 * y * size + 2 * xx
+                            op[(c * n + y) * n + xx] = max(max(xp[b], xp[b + 1]), max(xp[b + size], xp[b + size + 1]))
+                            xx += 1
+                        }
+                        y += 1
+                    }
+                    c += 1
                 }
             }
         }

@@ -132,28 +132,61 @@ struct GlyphReader: Sendable {
     }
 
     /// Separable box max/min filter with reflected borders (== a size x size square footprint).
+    ///
+    /// The loops are plain `while` loops over unsafe buffers, in the order of the Kotlin original. `for k in a...b` and
+    /// `for i in x.indices` go through generic range iterators that an unoptimized (Debug) build resolves through the
+    /// runtime on every step, which made this 150x slower there; the arithmetic and its order are unchanged, so the
+    /// result is bit-identical.
     private func rankFilter(_ a: [Float], _ w: Int, _ h: Int, _ size: Int, _ isMax: Bool) -> [Float] {
         let r = size / 2
         var tmp = [Float](repeating: 0, count: w * h)
-        for y in 0..<h {
-            for x in 0..<w {
-                var v = a[y * w + refl(x - r, w)]
-                for k in (-r + 1)...r { let c = a[y * w + refl(x + k, w)]; v = isMax ? max(v, c) : min(v, c) }
-                tmp[y * w + x] = v
+        var out = [Float](repeating: 0, count: w * h)
+        a.withUnsafeBufferPointer { ap in
+            tmp.withUnsafeMutableBufferPointer { tp in
+                var y = 0
+                while y < h {
+                    var x = 0
+                    while x < w {
+                        var v = ap[y * w + refl(x - r, w)]
+                        var k = -r + 1
+                        while k <= r {
+                            let c = ap[y * w + refl(x + k, w)]
+                            v = isMax ? max(v, c) : min(v, c)
+                            k += 1
+                        }
+                        tp[y * w + x] = v
+                        x += 1
+                    }
+                    y += 1
+                }
             }
         }
-        var out = [Float](repeating: 0, count: w * h)
-        for y in 0..<h {
-            for x in 0..<w {
-                var v = tmp[refl(y - r, h) * w + x]
-                for k in (-r + 1)...r { let c = tmp[refl(y + k, h) * w + x]; v = isMax ? max(v, c) : min(v, c) }
-                out[y * w + x] = v
+        tmp.withUnsafeBufferPointer { tp in
+            out.withUnsafeMutableBufferPointer { op in
+                var y = 0
+                while y < h {
+                    var x = 0
+                    while x < w {
+                        var v = tp[refl(y - r, h) * w + x]
+                        var k = -r + 1
+                        while k <= r {
+                            let c = tp[refl(y + k, h) * w + x]
+                            v = isMax ? max(v, c) : min(v, c)
+                            k += 1
+                        }
+                        op[y * w + x] = v
+                        x += 1
+                    }
+                    y += 1
+                }
             }
         }
         return out
     }
 
-    /// scipy.ndimage.gaussian_filter: truncate 4.0, reflected borders.
+    /// scipy.ndimage.gaussian_filter: truncate 4.0, reflected borders. Plain `while` loops over unsafe buffers (see
+    /// `rankFilter`); each row/column is copied once into a reflected buffer so the inner loop is a plain
+    /// multiply-accumulate, summed in the same order and in double precision as before.
     private func gaussian(_ a: [Float], _ w: Int, _ h: Int, _ sigma: Double) -> [Float] {
         let radius = Int(4.0 * sigma + 0.5)
         var kernel = [Double](repeating: 0, count: 2 * radius + 1)
@@ -164,25 +197,59 @@ struct GlyphReader: Sendable {
             total += v
         }
         for i in kernel.indices { kernel[i] /= total }
+        let klen = kernel.count
 
         var tmp = [Float](repeating: 0, count: w * h)
-        var row = [Float](repeating: 0, count: w + 2 * radius)
-        for y in 0..<h {
-            for i in row.indices { row[i] = a[y * w + refl(i - radius, w)] }
-            for x in 0..<w {
-                var s = 0.0 // scipy accumulates in double; intermediate rows are stored as float32
-                for k in kernel.indices { s += kernel[k] * Double(row[x + k]) }
-                tmp[y * w + x] = Float(s)
-            }
-        }
+        var row = [Double](repeating: 0, count: w + 2 * radius) // each sample converted to Double once, not once per tap
         var out = [Float](repeating: 0, count: w * h)
-        var col = [Float](repeating: 0, count: h + 2 * radius)
-        for x in 0..<w {
-            for i in col.indices { col[i] = tmp[refl(i - radius, h) * w + x] }
-            for y in 0..<h {
-                var s = 0.0
-                for k in kernel.indices { s += kernel[k] * Double(col[y + k]) }
-                out[y * w + x] = Float(s)
+        var col = [Double](repeating: 0, count: h + 2 * radius)
+        kernel.withUnsafeBufferPointer { kp in
+            let kb = kp.baseAddress!
+            a.withUnsafeBufferPointer { ap in
+                row.withUnsafeMutableBufferPointer { rp in
+                    let rb = UnsafePointer(rp.baseAddress!)
+                    tmp.withUnsafeMutableBufferPointer { tp in
+                        var y = 0
+                        while y < h {
+                            var i = 0
+                            while i < w + 2 * radius { rp[i] = Double(ap[y * w + refl(i - radius, w)]); i += 1 }
+                            var x = 0
+                            while x < w {
+                                var s = 0.0 // scipy accumulates in double; intermediate rows are stored as float32
+                                var kq = kb
+                                var rq = rb + x
+                                let kend = kb + klen
+                                while kq < kend { s += kq.pointee * rq.pointee; kq += 1; rq += 1 }
+                                tp[y * w + x] = Float(s)
+                                x += 1
+                            }
+                            y += 1
+                        }
+                    }
+                }
+            }
+            tmp.withUnsafeBufferPointer { tp in
+                col.withUnsafeMutableBufferPointer { cp in
+                    let cb = UnsafePointer(cp.baseAddress!)
+                    out.withUnsafeMutableBufferPointer { op in
+                        var x = 0
+                        while x < w {
+                            var i = 0
+                            while i < h + 2 * radius { cp[i] = Double(tp[refl(i - radius, h) * w + x]); i += 1 }
+                            var y = 0
+                            while y < h {
+                                var s = 0.0
+                                var kq = kb
+                                var cq = cb + y
+                                let kend = kb + klen
+                                while kq < kend { s += kq.pointee * cq.pointee; kq += 1; cq += 1 }
+                                op[y * w + x] = Float(s)
+                                y += 1
+                            }
+                            x += 1
+                        }
+                    }
+                }
             }
         }
         return out
@@ -443,26 +510,49 @@ struct GlyphReader: Sendable {
     private static let precision = 22
 
     /// PIL Image.resize(BILINEAR) for 8-bit data: triangle filter widened when shrinking, horizontal pass then
-    /// vertical, with PIL's 22-bit fixed-point coefficients and round-half-up (matches Pillow exactly).
+    /// vertical, with PIL's 22-bit fixed-point coefficients and round-half-up (matches Pillow exactly). `while` loops
+    /// over unsafe buffers, like `rankFilter`.
     private func resizeBilinear(_ src: [Int], _ w: Int, _ h: Int, _ nw: Int, _ nh: Int) -> [Int] {
         let hx = coefficients(w, nw)
         var tmp = [Int](repeating: 0, count: nw * h)
-        for y in 0..<h {
-            for ox in 0..<nw {
-                let c = hx[ox]
-                var acc = 1 << (Self.precision - 1)
-                for i in c.k.indices { acc += c.k[i] * src[y * w + c.start + i] }
-                tmp[y * nw + ox] = clip8(acc >> Self.precision)
+        src.withUnsafeBufferPointer { sp in
+            tmp.withUnsafeMutableBufferPointer { tp in
+                var y = 0
+                while y < h {
+                    var ox = 0
+                    while ox < nw {
+                        let c = hx[ox]
+                        var acc = 1 << (Self.precision - 1)
+                        c.k.withUnsafeBufferPointer { kp in
+                            var i = 0
+                            while i < kp.count { acc += kp[i] * sp[y * w + c.start + i]; i += 1 }
+                        }
+                        tp[y * nw + ox] = clip8(acc >> Self.precision)
+                        ox += 1
+                    }
+                    y += 1
+                }
             }
         }
         let vy = coefficients(h, nh)
         var out = [Int](repeating: 0, count: nw * nh)
-        for oy in 0..<nh {
-            for x in 0..<nw {
-                let c = vy[oy]
-                var acc = 1 << (Self.precision - 1)
-                for i in c.k.indices { acc += c.k[i] * tmp[(c.start + i) * nw + x] }
-                out[oy * nw + x] = clip8(acc >> Self.precision)
+        tmp.withUnsafeBufferPointer { tp in
+            out.withUnsafeMutableBufferPointer { op in
+                var oy = 0
+                while oy < nh {
+                    let c = vy[oy]
+                    var x = 0
+                    while x < nw {
+                        var acc = 1 << (Self.precision - 1)
+                        c.k.withUnsafeBufferPointer { kp in
+                            var i = 0
+                            while i < kp.count { acc += kp[i] * tp[(c.start + i) * nw + x]; i += 1 }
+                        }
+                        op[oy * nw + x] = clip8(acc >> Self.precision)
+                        x += 1
+                    }
+                    oy += 1
+                }
             }
         }
         return out

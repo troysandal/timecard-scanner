@@ -6,7 +6,7 @@ import PackageDescription
 // (`TimeCardScanner`, in the Swift and Kotlin classes and `registerPlugin`) is separate and stays as it is.
 let package = Package(
     name: "TimecardScanner",
-    platforms: [.iOS(.v15)],
+    platforms: [.iOS(.v17)],
     products: [
         .library(name: "TimecardScanner", targets: ["TimeCardScannerPlugin"]),
     ],

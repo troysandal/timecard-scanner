@@ -1,5 +1,11 @@
 import CoreGraphics
 import Foundation
+import OSLog
+
+private let timingLog = Logger(subsystem: "TimeCardScanner", category: "timing")
+
+/// Milliseconds in a `Duration`.
+private func ms(_ d: Duration) -> Int { Int(Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15) }
 
 /// The result of scanning one card.
 public struct TableScan: Sendable, Codable, Equatable {
@@ -43,6 +49,8 @@ public enum TimeCardScanner {
     /// Scans an upright photo of the table. Throws only if Vision fails; a
     /// photo with no table comes back with no rows and a `.noTable` flag.
     public static func scan(_ image: CGImage) async throws -> TableScan {
+        let clock = ContinuousClock()
+        let started = clock.now
         guard let detection = try await AppleTable.detect(in: image) else {
             return TableScan(
                 rows: [], rawText: [], cells: [], printedCheckpoints: [],
@@ -76,12 +84,25 @@ public enum TimeCardScanner {
 
         // Cells Vision left blank although they hold ink (it refuses bare strokes such as a lone `11`).
         let cells = cleaned.rows.map(\.cells)
+        let afterVision = clock.now
         var suggestions: [DigitSuggestion] = []
+        var inkMs = 0, suggestMs = 0, inkFlagCount = 0
         if let gray = InkCheck.gray(from: image) {
+            let t = clock.now
             let inkFlags = InkCheck.flags(gray: gray, cells: cells, rows: rows)
             flags += inkFlags
+            inkFlagCount = inkFlags.count
+            inkMs = ms(clock.now - t)
             // ...and a digit read offered for each, for the user to accept. Never written into `rows`.
+            let t2 = clock.now
             suggestions = DigitSuggester.suggestions(gray: gray, cells: cells, flags: inkFlags)
+            suggestMs = ms(clock.now - t2)
+        }
+        let visionMs = ms(afterVision - started)
+        let message = "scan timing: vision+cleanup \(visionMs) ms, ink check \(inkMs) ms (\(inkFlagCount) cells flagged), suggestions \(suggestMs) ms (\(suggestions.count) offered), total \(ms(clock.now - started)) ms"
+        timingLog.notice("\(message, privacy: .public)")
+        if ProcessInfo.processInfo.environment["TIMECARD_SCANNER_TIMING"] != nil {
+            FileHandle.standardError.write(Data((message + "\n").utf8))
         }
 
         return TableScan(

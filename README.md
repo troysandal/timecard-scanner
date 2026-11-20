@@ -25,7 +25,7 @@ Add to the host app's `Info.plist`:
 <string>Photograph your time card to read its times.</string>
 ```
 
-The plugin compiles for the host's iOS 15 target; the scanner itself is behind
+The plugin compiles for the host's iOS 17 target; the scanner itself is behind
 `#available(iOS 26)`.
 
 For Android: `npx cap sync android`. Nothing to add to the manifest. The app grows by

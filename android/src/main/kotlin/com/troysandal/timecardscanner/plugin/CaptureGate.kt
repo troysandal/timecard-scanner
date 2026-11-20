@@ -16,6 +16,10 @@ internal class CaptureGate<T : Any> {
         return true
     }
 
+    /** The pending capture, leaving the gate busy; null if there is none. */
+    @Synchronized
+    fun current(): T? = pending
+
     /** The pending capture, freeing the gate; null if there is none (already settled). */
     @Synchronized
     fun take(): T? {

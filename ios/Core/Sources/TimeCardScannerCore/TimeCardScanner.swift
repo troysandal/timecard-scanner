@@ -44,27 +44,28 @@ public struct TableScan: Sendable, Codable, Equatable {
 @available(iOS 26, macOS 26, *)
 public enum TimeCardScanner {
     /// Bump when a change can alter the extracted table.
-    public static let pipelineVersion = "S1.3"
+    public static let pipelineVersion = "S1.4"
 
     /// Scans an upright photo of the table. Throws only if Vision fails; a
     /// photo with no table comes back with no rows and a `.noTable` flag.
     public static func scan(_ image: CGImage) async throws -> TableScan {
         let clock = ContinuousClock()
         let started = clock.now
-        guard let detection = try await AppleTable.detect(in: image) else {
+        guard let attempt = try await AppleTable.detectBest(in: image) else {
             return TableScan(
                 rows: [], rawText: [], cells: [], printedCheckpoints: [],
                 flags: [ScanFlag(kind: .noTable, detail: "no table found by RecognizeDocumentsRequest")],
                 pipelineVersion: pipelineVersion
             )
         }
+        let detection = attempt.detection
 
         var flags: [ScanFlag] = []
         if detection.tableCount > 1 {
             flags.append(ScanFlag(kind: .multipleTables, detail: "\(detection.tableCount) tables detected; using the largest"))
         }
 
-        let cleaned = AppleTableCleanup.clean(detection.rows)
+        let cleaned = attempt.cleaned
         flags += cleaned.flags
 
         let raw = cleaned.rows.map(\.texts)

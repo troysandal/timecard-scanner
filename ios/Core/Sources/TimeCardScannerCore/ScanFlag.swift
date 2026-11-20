@@ -10,6 +10,9 @@ public struct ScanFlag: Sendable, Codable, Equatable {
         case multipleTables
         /// A phantom row far thinner than a real row was ignored.
         case droppedSliverRow
+        /// An empty sliver far narrower than a real column was dropped from detected rows (table-level; the values
+        /// stay in their columns).
+        case droppedSliverColumn
         /// Blank rows were inserted for a whole-row vertical gap in the detected table.
         case insertedGapRows
         /// A detected row had fewer than four cells and was dropped.

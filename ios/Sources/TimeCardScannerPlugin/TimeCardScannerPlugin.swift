@@ -58,6 +58,8 @@ public class TimeCardScannerPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let slot = captureSlot.acquire() else {
             return call.reject("A capture is already in progress.", ErrorCode.busy)
         }
+        // The user draws a box around the table after the scanner unless the host turns that off.
+        let selectTable = call.getBool("selectTable") ?? true
 
         Task { @MainActor in
             guard let host = self.bridge?.viewController else {
@@ -68,14 +70,19 @@ public class TimeCardScannerPlugin: CAPPlugin, CAPBridgedPlugin {
             self.presenter = camera
             camera.present(from: host) { outcome in
                 if self.presenter === camera { self.presenter = nil }
-                self.captureSlot.release(slot)
                 switch outcome {
                 case .cancelled:
+                    self.captureSlot.release(slot)
                     call.reject("The user cancelled the scan.", ErrorCode.cancelled)
                 case .failed(let error):
+                    self.captureSlot.release(slot)
                     call.reject("The document scanner failed: \(error.localizedDescription)", ErrorCode.scanFailed, error)
                 case .captured(let image, let pageCount):
-                    Task { await self.process(image: image, pageCount: pageCount, folder: folder, call: call) }
+                    // The slot stays held through the box step and the read.
+                    Task {
+                        await self.process(image: image, pageCount: pageCount, folder: folder, selectTable: selectTable, call: call)
+                        self.captureSlot.release(slot)
+                    }
                 }
             }
         }
@@ -92,13 +99,25 @@ public class TimeCardScannerPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let url, let image = ImageLoading.uprightImage(contentsOf: url) else {
             return call.reject("Could not read an image at \(path).", ErrorCode.invalidArgument)
         }
-        Task { await self.scan(image, savedAt: url, extraWarnings: [], call: call) }
+        var region: ScanRegion?
+        if let raw = call.getObject("region") {
+            func number(_ key: String) -> Double? { (raw[key] as? NSNumber)?.doubleValue }
+            guard let x = number("x"), let y = number("y"), let w = number("width"), let h = number("height"),
+                  let parsed = ScanRegion(x: x, y: y, width: w, height: h)
+            else {
+                return call.reject("`region` must be {x, y, width, height}, fractions of the photo inside 0...1, each side at least 0.05.", ErrorCode.invalidArgument)
+            }
+            region = parsed
+        } else if call.hasOption("region") {
+            return call.reject("`region` must be an object {x, y, width, height}.", ErrorCode.invalidArgument)
+        }
+        Task { await self.scan(image, savedAt: url, extraWarnings: [], region: region, call: call) }
     }
 
     // MARK: Scanning
 
     @available(iOS 26, *)
-    private func process(image: UIImage, pageCount: Int, folder: URL, call: CAPPluginCall) async {
+    private func process(image: UIImage, pageCount: Int, folder: URL, selectTable: Bool, call: CAPPluginCall) async {
         guard let upright = image.uprightCGImage(), let jpeg = ImageLoading.jpegData(from: upright) else {
             return call.reject("Could not encode the captured image.", ErrorCode.scanFailed)
         }
@@ -110,13 +129,41 @@ public class TimeCardScannerPlugin: CAPPlugin, CAPBridgedPlugin {
             return call.reject("Could not save the photo: \(error.localizedDescription)", ErrorCode.scanFailed, error)
         }
         let extra = pageCount > 1 ? ["The scanner returned \(pageCount) pages; only the first was read."] : []
-        await scan(upright, savedAt: file, extraWarnings: extra, call: call)
+        guard selectTable else {
+            return await scan(upright, savedAt: file, extraWarnings: extra, region: nil, call: call)
+        }
+        // Where the table is, as far as the automatic read can tell, is where the user's box starts.
+        let found = try? await TimeCardScanner.scan(upright)
+        let start = found.flatMap { ScanRegion.enclosing(cells: $0.cells, imageWidth: upright.width, imageHeight: upright.height) } ?? ScanRegion.fallbackBox
+        switch await selectBox(on: image, startingAt: start) {
+        case .cancelled:
+            try? FileManager.default.removeItem(at: file) // nothing was asked of the photo: do not leave it behind
+            call.reject("The user cancelled the scan.", ErrorCode.cancelled)
+        case .confirmed(let region):
+            await scan(upright, savedAt: file, extraWarnings: extra, region: region, call: call)
+        }
+    }
+
+    /// Shows the box screen over the host and waits for the user.
+    @available(iOS 26, *)
+    private func selectBox(on image: UIImage, startingAt start: ScanRegion) async -> TableBoxViewController.Outcome {
+        await withCheckedContinuation { continuation in
+            Task { @MainActor in
+                guard let host = self.bridge?.viewController else { return continuation.resume(returning: .cancelled) }
+                let screen = TableBoxViewController(image: image, initial: start) { continuation.resume(returning: $0) }
+                host.present(screen, animated: true)
+            }
+        }
     }
 
     @available(iOS 26, *)
-    private func scan(_ image: CGImage, savedAt file: URL, extraWarnings: [String], call: CAPPluginCall) async {
+    private func scan(_ image: CGImage, savedAt file: URL, extraWarnings: [String], region: ScanRegion?, call: CAPPluginCall) async {
         do {
-            let scan = try await TimeCardScanner.scan(image)
+            // The saved photo stays the whole card; only the box is read.
+            guard let part = region.map({ $0.crop(image) }) ?? image else {
+                return call.reject("Could not cut the region out of the photo.", ErrorCode.invalidArgument)
+            }
+            let scan = try await TimeCardScanner.scan(part)
             let result = Self.result(for: scan, file: file, extraWarnings: extraWarnings, webPath: webPath(for: file))
             if scan.rows.isEmpty {
                 // Keep the photo so the host can show what was captured.

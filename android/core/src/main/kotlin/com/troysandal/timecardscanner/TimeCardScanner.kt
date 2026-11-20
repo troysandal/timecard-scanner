@@ -82,7 +82,7 @@ data class TableScan(
  */
 object TimeCardScanner {
     /** Bump when a change can alter the extracted table. */
-    const val pipelineVersion = "A1.2"
+    const val pipelineVersion = "A1.3"
 
     const val PEAK_MIN = 0.7f
     const val CONF_MIN = 0.5f

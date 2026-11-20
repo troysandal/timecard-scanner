@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown on the screen where the user drags a box over the table. A host app can translate or reword them
+         by defining strings with the same names in its own res/values-xx/strings.xml. -->
+    <string name="timecard_scanner_box_title">Drag the box over the checkpoint rows</string>
+    <string name="timecard_scanner_box_cancel">Cancel</string>
+    <string name="timecard_scanner_box_read">Read</string>
+</resources>

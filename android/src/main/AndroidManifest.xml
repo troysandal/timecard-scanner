@@ -1,3 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- No permissions: the document scanner runs in Google Play services, which owns the camera permission. -->
+    <application>
+        <!-- The screen where the user drags a box over the table (see TableBoxActivity). -->
+        <activity
+            android:name="com.troysandal.timecardscanner.plugin.TableBoxActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
+            android:theme="@android:style/Theme.Black.NoTitleBar" />
+    </application>
 </manifest>

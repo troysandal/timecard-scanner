@@ -57,6 +57,16 @@ In the scanner choose **Manual** shutter, then Save. Hold the phone about
 `captureCard` takes the first page only (a warning notes extra pages).
 `scanImage({ path })` re-reads a photo already on disk.
 
+**Behaviour change in 0.5.0:** `captureCard` now shows a screen after the scanner where the user drags a box over the
+checkpoint rows, and reads only that box (the saved photo is the whole card). Pass `selectTable: false` to read the
+photo exactly as the scanner returned it, as before. Cancelling that screen rejects `CANCELLED` and deletes the photo.
+
+**Photographing the whole card.** The scanner may be pointed at the whole card (name, number, totals) so the
+saved photo is the full card; the table is found by itself. If that fails (`NO_TABLE`; `error.data.image` is the
+photo), let the user drag a box around the checkpoint rows and read just that (`captureCard` does this itself by default, see `selectTable`):
+`scanImage({ path, region: { x, y, width, height } })`, fractions (0..1) of the photo, origin top-left. The
+returned `image` is still the whole photo.
+
 ## Output
 
 - Cells contain only `0-9` and `:`. Colons are meaningful (`:05`, `4:21`) and

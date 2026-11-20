@@ -77,4 +77,27 @@ class RowAnchorsTest {
     @Test fun noDigitsGivesNull() {
         assertNull(RowAnchorFinder.find(listOf(OcrSymbol("A", Box(0f, 0f, 10f, 10f))), 1000))
     }
+
+    /** A whole card: a handwritten rider number above the table bridges small x gaps all the way into the writing. */
+    @Test fun writingBridgingTheBandDoesNotSwallowIt() {
+        val bridge = listOf(digit("6", 135f, 60f), digit("6", 165f, 60f), digit("3", 195f, 60f), digit("4", 225f, 60f), digit("5", 255f, 60f), digit("7", 283f, 60f))
+        val writing = (0 until 12).flatMap { r -> (0 until 6).map { c -> digit("${(r + c) % 10}", 300f + c * 30f, 200f + r * 80f) } }
+        val a = assertNotNull(RowAnchorFinder.find(numerals(12) + bridge + writing, 1000))
+        assertEquals(12, a.rowCount)
+        assertEquals(12, a.found)
+    }
+
+    /** A stray digit well left of the numeral column must not leave the band a cluster of one. */
+    @Test fun aStrayDigitLeftOfTheBandDoesNotHideIt() {
+        val a = assertNotNull(RowAnchorFinder.find(numerals(12) + digit("1", 20f, 500f), 1000))
+        assertEquals(12, a.rowCount)
+    }
+
+    /** A whole card's footer digits (an address) below the table must not extend the row count. */
+    @Test fun footerDigitsOffTheNumeralLineAreNotRows() {
+        val footer = listOf(digit("1", 100f, 200f + 10 * 80f + 400f), digit("5", 114f, 200f + 10 * 80f + 400f))
+        val a = assertNotNull(RowAnchorFinder.find(numerals(10) + footer, 1000))
+        assertEquals(10, a.rowCount)
+        assertEquals(10, a.found)
+    }
 }

@@ -70,6 +70,25 @@ enum AppleTableCleanup {
         texts.dropFirst().prefix(3).contains(where: isWordLike)
     }
 
+    /// An empty value cell narrower than this fraction of the row's other value cells is a sliver, not a column.
+    static let sliverColumnFraction: CGFloat = 0.35
+
+    /// Removes at most one empty sliver column (never the `Ck.#` cell) from a row that has more than four
+    /// cells. A row with the usual four cells, or without geometry, is returned unchanged.
+    static func withoutEmptySliverColumn(_ row: AppleRow) -> AppleRow {
+        guard row.texts.count > 4, row.texts.count == row.cells.count else { return row }
+        let widths = row.cells.dropFirst().map(\.width).sorted()
+        let median = widths[widths.count / 2]
+        guard median > 0 else { return row }
+        guard let i = (1..<row.cells.count).first(where: {
+            row.texts[$0].isEmpty && !row.cells[$0].isEmpty && row.cells[$0].width < median * sliverColumnFraction
+        }) else { return row }
+        var out = row
+        out.texts.remove(at: i)
+        out.cells.remove(at: i)
+        return out
+    }
+
     static func clean(_ raw: [AppleRow]) -> (rows: [CleanRow], flags: [ScanFlag]) {
         var flags: [ScanFlag] = []
         var inLeadingRows = true
@@ -102,6 +121,19 @@ enum AppleTableCleanup {
             } else {
                 kept.append((index, row))
             }
+        }
+
+        // A whole-card photo makes Apple split an empty sliver off a column (a 60 px cell beside 270 px
+        // ones), so the row has 5 cells and every value would land a column to the right. An empty cell
+        // far narrower than the row's other value cells is not a column: drop it.
+        var slivers = 0
+        kept = kept.map { item in
+            let fixed = withoutEmptySliverColumn(item.row)
+            if fixed.texts.count != item.row.texts.count { slivers += 1 }
+            return (item.index, fixed)
+        }
+        if slivers > 0 {
+            flags.append(ScanFlag(kind: .droppedSliverColumn, detail: "dropped an empty sliver column from \(slivers) detected row(s); values kept in their columns"))
         }
 
         var out: [CleanRow] = []

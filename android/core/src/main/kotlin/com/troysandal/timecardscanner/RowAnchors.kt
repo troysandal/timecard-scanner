@@ -29,6 +29,9 @@ object RowAnchorFinder {
     /** Printed variants top out at 18; generous headroom, but a stray "99" must not become 99 rows. */
     const val MAX_ROWS = 30
 
+    /** The numeral band spans at most this fraction of the image width (two digits are about 0.05). */
+    const val MAX_BAND_WIDTH = 0.10f
+
     private data class Numeral(val value: Int, val cy: Float, val left: Float, val right: Float)
 
     /** [imageWidth] scales the gap that separates the numeral band from the writing. */
@@ -42,9 +45,19 @@ object RowAnchorFinder {
         // 1. The numeral band: the leftmost cluster of digit x-positions.
         val byX = digits.sortedBy { it.first.box.centerX }
         val gap = imageWidth * 0.035f
+        // ...but never wider than a numeral column can be: on a whole card, a handwritten rider number or the
+        // writing itself can bridge small gaps all the way across the table and swallow the band. A lone stray
+        // digit left of the column (a hole punch read as `1`) makes a cluster of one: start again from the next.
+        var start = 0
         var end = 1
-        while (end < byX.size && byX[end].first.box.centerX - byX[end - 1].first.box.centerX <= gap) end++
-        val band = byX.subList(0, end)
+        while (start < byX.size - 1) {
+            val reach = byX[start].first.box.centerX + imageWidth * MAX_BAND_WIDTH
+            end = start + 1
+            while (end < byX.size && byX[end].first.box.centerX - byX[end - 1].first.box.centerX <= gap && byX[end].first.box.centerX <= reach) end++
+            if (end - start >= 2) break
+            start++
+        }
+        val band = byX.subList(start, end)
         if (band.size < 2) return null
 
         // 2. Group the band into numerals by y (the two digits of "10" share a row).
@@ -88,9 +101,23 @@ object RowAnchorFinder {
         if (chain.size < 2) return null
 
         // 4. Pitch from consecutive chain members; interpolate every value 1..max.
-        val pitches = chain.zipWithNext { a, b -> (b.cy - a.cy) / (b.value - a.value) }.sorted()
-        val pitch = pitches[pitches.size / 2]
+        var pitches = chain.zipWithNext { a, b -> (b.cy - a.cy) / (b.value - a.value) }.sorted()
+        var pitch = pitches[pitches.size / 2]
         if (pitch <= 0f) return null
+        // Numerals sit on one line (value x pitch + offset). A digit group from the card's footer or header (an
+        // address, a phone number) that happens to be larger and lower than the real ones would extend the chain
+        // past the last row: drop members that are off the line by more than half a row (footer digits are whole rows away).
+        val offsets = chain.map { it.cy - it.value * pitch }.sorted()
+        val offset = offsets[offsets.size / 2]
+        val online = chain.filter { kotlin.math.abs(it.cy - (offset + it.value * pitch)) <= 0.5f * pitch }
+        if (online.size != chain.size) {
+            if (online.size < 2) return null
+            chain.clear()
+            chain.addAll(online)
+            pitches = chain.zipWithNext { a, b -> (b.cy - a.cy) / (b.value - a.value) }.sorted()
+            pitch = pitches[pitches.size / 2]
+            if (pitch <= 0f) return null
+        }
         val maxValue = chain.last().value
         val centers = (1..maxValue).map { v ->
             val anchor = chain.minByOrNull { kotlin.math.abs(it.value - v) }!!

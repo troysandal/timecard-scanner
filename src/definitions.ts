@@ -10,6 +10,28 @@ export interface CaptureOptions {
   directory?: ScanDirectory;
   /** Folder inside `directory` to save into, created if missing. The file name is generated. */
   folder?: string;
+  /**
+   * After the scanner, show a screen where the user drags a box over the checkpoint rows, and read only that
+   * box. The saved photo is still the whole card, so frame the whole card in the scanner. The box starts on the
+   * table when the plugin can find it. Cancelling that screen rejects with `CANCELLED` and deletes the saved photo.
+   * New in 0.5.0, and a behaviour change for callers of `captureCard`. Default `true`; `false`
+   * reads the photo exactly as the scanner returned it (use it for a table-only photo).
+   */
+  selectTable?: boolean;
+}
+
+/** A box on a photo, as fractions (0..1) of the upright photo's width and height, origin top-left. */
+export interface ScanRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ScanImageOptions {
+  path: string;
+  /** Read only this box. Must lie inside the photo (0..1) and be at least 0.05 wide and 0.05 high. */
+  region?: ScanRegion;
 }
 
 export interface Row {
@@ -74,6 +96,11 @@ export interface TimeCardScannerPlugin {
    */
   captureCard(options?: CaptureOptions): Promise<ScanResult>;
 
-  /** Reads the table from a photo already on disk (e.g. one from `captureCard`). */
-  scanImage(options: { path: string }): Promise<ScanResult>;
+  /**
+   * Reads the table from a photo already on disk (e.g. one from `captureCard`). With `region`, only that box of
+   * the photo is read, for a photo of the whole card where the table was not found by itself (`NO_TABLE`) and
+   * the user drags a box around the checkpoint rows. `image` in the result is still the whole photo.
+   * Rejects `INVALID_ARGUMENT` for a bad `region`.
+   */
+  scanImage(options: ScanImageOptions): Promise<ScanResult>;
 }

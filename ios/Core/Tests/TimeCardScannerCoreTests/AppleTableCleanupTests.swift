@@ -124,6 +124,28 @@ struct AppleTableCleanupTests {
         #expect(flags.isEmpty)
     }
 
+    /// Whole-card photo (IMG_5789): Apple splits a 60 px empty sliver off the left of the first value column.
+    private func slivered(_ texts: [String], y: CGFloat) -> AppleRow {
+        let xs: [CGFloat] = [900, 1038, 1098, 1370, 1652, 1900]
+        let cells = (0..<5).map { CGRect(x: xs[$0], y: y, width: xs[$0 + 1] - xs[$0], height: 130) }
+        return AppleRow(texts: texts, cells: cells)
+    }
+
+    @Test func anEmptySliverColumnIsDroppedSoValuesStayInTheirColumns() {
+        let (rows, flags) = AppleTableCleanup.clean([slivered(["1", "", "9", "37", "00"], y: 1000)])
+        #expect(rows[0].texts == ["9", "37", "00"])
+        #expect(rows[0].cells[0].minX == 1098)
+        // one table-level flag, on no row, so no row is marked as doubtful
+        #expect(flags.map(\.kind) == [.droppedSliverColumn])
+        #expect(flags[0].row == nil)
+    }
+
+    @Test func aSliverHoldingInkIsNotDroppedAndStaysFlagged() {
+        let (rows, flags) = AppleTableCleanup.clean([slivered(["1", "7", "9", "37", "00"], y: 1000)])
+        #expect(rows[0].texts == ["7", "9", "37"])
+        #expect(flags.contains { $0.kind == .extraColumns })
+    }
+
     /// A .zero cell must not stretch its row's rect to the origin (which made rows enormous).
     @Test func aCellWithNoGeometryDoesNotStretchTheRow() {
         var r = row(["1", "14", "", ""], y: 1000)

@@ -11,6 +11,7 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.troysandal.timecardscanner.Box
 import com.troysandal.timecardscanner.OcrSymbol
+import com.troysandal.timecardscanner.ScanRegion
 import com.troysandal.timecardscanner.TableScan
 import com.troysandal.timecardscanner.TimeCardScanner
 import java.io.File
@@ -28,11 +29,15 @@ object ImageScanner {
     class Result(val scan: TableScan, val width: Int, val height: Int, val timing: Timing)
 
     /** Returns null when [file] is not a readable image. Throws if text recognition itself fails. */
-    fun scan(context: Context, file: File): Result? {
+    fun scan(context: Context, file: File, region: ScanRegion? = null): Result? {
         val bitmap = decodeUpright(file) ?: return null
+        var part: Bitmap? = null
         try {
-            return scan(context, bitmap)
+            // Only the box is read; the file on disk stays the whole photo.
+            part = region?.pixels(bitmap.width, bitmap.height)?.let { Bitmap.createBitmap(bitmap, it.left, it.top, it.width, it.height) }
+            return scan(context, part ?: bitmap)
         } finally {
+            if (part != null && part !== bitmap) part.recycle()
             bitmap.recycle()
         }
     }
@@ -60,13 +65,13 @@ object ImageScanner {
         return Result(scan, w, h, Timing((t1 - t0) / 1_000_000, (t2 - t1) / 1_000_000))
     }
 
-    /** Decodes [file] with its EXIF orientation applied, downsampled by powers of two to at most [MAX_SIDE]. */
-    fun decodeUpright(file: File): Bitmap? {
+    /** Decodes [file] with its EXIF orientation applied, downsampled by powers of two to at most [maxSide]. */
+    fun decodeUpright(file: File, maxSide: Int = MAX_SIDE): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.path, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         var sample = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_SIDE) sample *= 2
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
         val options = BitmapFactory.Options().apply {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888

@@ -42,7 +42,7 @@ Contract to preserve: cells contain only `0-9` and `:` (colons are meaningful, n
 
 ## Gradle versions
 
-The wrapper here is **Gradle 8.14.3 with AGP 8.13.0**, because AGP 8.13 breaks on Gradle 9.6. This only affects standalone builds from this repo. A host app ignores this folder's wrapper, `settings.gradle` and `gradle.properties` and supplies its own (the bench and the host app use Gradle 9.6 / AGP 9.5.1). `build.gradle` must keep working on both AGP generations: the `kotlin` vs `java` source-set guard and the conditional `kotlin-android` apply exist for that. After touching `android/build.gradle`, also build it under AGP 9 via the bench (`cd android && ./gradlew :core:test :timecard-scanner:assembleDebug` there).
+The wrapper here is **Gradle 8.14.3 with AGP 8.13.0**, because AGP 8.13 breaks on Gradle 9.6. This only affects standalone builds from this repo. A host app ignores this folder's wrapper, `settings.gradle` and `gradle.properties` and supplies its own; since 2026-11-19 the bench and the host app use Gradle 8.14.3 / AGP 8.13.0 too (matching Capacitor 8.6.0), built with Temurin 21 (Gradle 8.14.3 cannot run on Java 25). `build.gradle` still carries its AGP 9 guards (the `kotlin` vs `java` source-set check and the conditional `kotlin-android` apply) for the day the plugin, bench and host move to AGP 9 together (when Play requires targetSdk 37 and Capacitor moves); nothing builds them now. After touching `android/build.gradle`, build it in the bench (`cd android && ./gradlew :core:test :timecard-scanner:assembleDebug` there) and run `npm run verify:android` here.
 
 ## Conventions
 

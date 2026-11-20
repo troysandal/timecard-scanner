@@ -51,7 +51,7 @@ class TableBoxActivity : Activity() {
         boxView = BoxView(this, photo, start)
 
         val title = TextView(this).apply {
-            text = getString(R.string.timecard_scanner_box_title)
+            text = getString(intent.getIntExtra(EXTRA_TITLE, R.string.timecard_scanner_box_title))
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             gravity = Gravity.CENTER
@@ -62,7 +62,7 @@ class TableBoxActivity : Activity() {
             setOnClickListener { setResult(RESULT_CANCELED); finish() }
         }
         val read = Button(this).apply {
-            text = getString(R.string.timecard_scanner_box_read)
+            text = getString(intent.getIntExtra(EXTRA_CONFIRM, R.string.timecard_scanner_box_read))
             setOnClickListener { confirm() }
         }
         val buttons = LinearLayout(this).apply {
@@ -105,13 +105,17 @@ class TableBoxActivity : Activity() {
 
     companion object {
         const val EXTRA_PATH = "path"
+        /** String resource ids for the title and the confirm button; the defaults are the "read the table" wording. */
+        const val EXTRA_TITLE = "titleRes"
+        const val EXTRA_CONFIRM = "confirmRes"
 
         /** Longest side the photo is decoded at for display; plenty for a phone screen. */
         private const val DISPLAY_SIDE = 2048
 
-        fun intent(context: Context, photo: File, start: ScanRegion): Intent =
+        fun intent(context: Context, photo: File, start: ScanRegion, titleRes: Int = R.string.timecard_scanner_box_title, confirmRes: Int = R.string.timecard_scanner_box_read): Intent =
             Intent(context, TableBoxActivity::class.java)
                 .putExtra(EXTRA_PATH, photo.path)
+                .putExtra(EXTRA_TITLE, titleRes).putExtra(EXTRA_CONFIRM, confirmRes)
                 .putExtra("x", start.x).putExtra("y", start.y).putExtra("width", start.width).putExtra("height", start.height)
     }
 }

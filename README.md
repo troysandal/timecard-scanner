@@ -36,7 +36,7 @@ roughly 4 MB per ABI (the bundled ML Kit text model) plus 0.3 MB for the digit m
 ```ts
 import { TimeCardScanner } from 'timecard-scanner';
 
-if ((await TimeCardScanner.isAvailable()).available) {
+if ((await TimeCardScanner.isAvailable()).captureAvailable) {
   try {
     const { image, rows, warnings } = await TimeCardScanner.captureCard({
       directory: 'DOCUMENTS',
@@ -66,6 +66,32 @@ saved photo is the full card; the table is found by itself. If that fails (`NO_T
 photo), let the user drag a box around the checkpoint rows and read just that (`captureCard` does this itself by default, see `selectTable`):
 `scanImage({ path, region: { x, y, width, height } })`, fractions (0..1) of the photo, origin top-left. The
 returned `image` is still the whole photo.
+
+## Photo only (0.6.0): `cropCard`
+
+When you only want a photo of the card and no reading (the reader is below the accuracy bar for some card types, see
+the bench notes), take the photo with `@capacitor/camera`, whose system camera uses the phone's macro lens when the
+card is close, and let the plugin crop it:
+
+```ts
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+
+const shot = await Camera.getPhoto({ source: CameraSource.Camera, resultType: CameraResultType.Uri, quality: 95 });
+try {
+  const { image } = await TimeCardScanner.cropCard({ path: shot.path!, directory: 'DOCUMENTS', folder: 'cards' });
+  // image.webPath → <img src>; the cropped card, saved as card-<uuid>.jpg. `shot.path` is still the host's to delete.
+} catch (e: any) {
+  if (e.code === 'CANCELLED') return; // the user closed the crop screen
+}
+```
+
+`cropCard` shows a native screen with the photo and a box that starts on the card when it can be found (Vision on iOS,
+a brightness search on Android); the user drags a corner to resize or the inside to move, then taps Use. It crops to
+that rectangle (no perspective straightening) and reads nothing, so it needs no camera permission, no Play services
+and no iOS 26: `isAvailable().photoAvailable` is true on native iOS and Android. Strings: `timecard_scanner_card_*`
+Android resources, and the host's `Localizable.strings` on iOS ("Drag the box around the card", "Cancel", "Use").
+`isAvailable()` now returns `captureAvailable` (was `available`, still returned as an alias until the next breaking
+release) beside `photoAvailable`.
 
 ## Output
 

@@ -34,6 +34,24 @@ export interface ScanImageOptions {
   region?: ScanRegion;
 }
 
+export interface CropCardOptions {
+  /** The photo to crop: a native file path or `file://` URL, e.g. from `@capacitor/camera` (`getPhoto` with `resultType: Uri`). */
+  path: string;
+  /** Where the cropped photo is saved. Same meaning as in {@link CaptureOptions}. */
+  directory?: ScanDirectory;
+  folder?: string;
+}
+
+/** The cropped card photo. Nothing is read from it. */
+export interface CardPhoto {
+  image: {
+    /** Native file path; usable with `@capacitor/filesystem`. */
+    path: string;
+    /** URL for `<img src>` in the web view. */
+    webPath: string;
+  };
+}
+
 export interface Row {
   /** Each cell is `''` when blank, never `null`. Characters are limited to `0-9` and `:`. */
   c1: string;
@@ -84,10 +102,22 @@ export type ScanErrorCode =
 
 export interface TimeCardScannerPlugin {
   /**
-   * True on iOS 26+ with the document scanner, and on Android when Google Play services has its document
-   * scanner module (fetched once while online; calling this requests it). Always safe to call.
+   * Always safe to call.
+   * - `captureAvailable`: `captureCard` and `scanImage` work. True on iOS 26+ with the document scanner, and on Android
+   *   when Google Play services has its document scanner module (fetched once while online; calling this requests it).
+   * - `photoAvailable`: `cropCard` works (native iOS and Android; false on the web). It needs no camera or Play services.
+   * - `available`: the old name of `captureAvailable`, kept for hosts not yet updated; will be removed in a later breaking release.
    */
-  isAvailable(): Promise<{ available: boolean }>;
+  isAvailable(): Promise<{ captureAvailable: boolean; photoAvailable: boolean; available: boolean }>;
+
+  /**
+   * Shows a screen where the user drags a box around the card on a photo the host took (with `@capacitor/camera`,
+   * which can use the phone's macro lens), starting on the card when it can be found, and saves the cropped card
+   * as a new JPEG. Reads nothing, so it works on every iOS the plugin supports. The input file is left alone.
+   * Rejects with `CANCELLED` (the user closed the screen), `INVALID_ARGUMENT` (unreadable `path`, bad `folder`),
+   * `BUSY` or `SCAN_FAILED`.
+   */
+  cropCard(options: CropCardOptions): Promise<CardPhoto>;
 
   /**
    * Opens the system document scanner, saves the photo and returns it with

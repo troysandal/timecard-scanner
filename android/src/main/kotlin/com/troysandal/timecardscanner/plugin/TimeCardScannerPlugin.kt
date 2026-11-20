@@ -15,7 +15,9 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.troysandal.timecardscanner.CardFinder
 import com.troysandal.timecardscanner.ScanRegion
+import com.troysandal.timecardscanner.TimeCardScanner
 import com.troysandal.timecardscanner.ScanFlag
 import com.troysandal.timecardscanner.TableScan
 import java.io.File
@@ -40,7 +42,7 @@ class TimeCardScannerPlugin : Plugin() {
     }
 
     /** One capture, from the scanner to the result. [file] and [extra] are filled in once the photo is saved. */
-    private class Capture(val call: PluginCall, val folder: File, val selectTable: Boolean) {
+    private class Capture(val call: PluginCall, val folder: File, val selectTable: Boolean, val cropSource: File? = null) {
         var file: File? = null
         var extra: List<String> = emptyList()
     }
@@ -66,7 +68,7 @@ class TimeCardScannerPlugin : Plugin() {
 
     @PluginMethod
     fun isAvailable(call: PluginCall) {
-        DocumentCapture.checkAvailable(context) { available -> call.resolve(JSObject().put("available", available)) }
+        DocumentCapture.checkAvailable(context) { available -> call.resolve(JSObject().put("captureAvailable", available).put("available", available).put("photoAvailable", true)) }
     }
 
     @PluginMethod
@@ -99,6 +101,43 @@ class TimeCardScannerPlugin : Plugin() {
                 gate.settle(capture) { it.call.reject("The document scanner is not available: ${e.message}", UNAVAILABLE, e) }
             },
         )
+    }
+
+    /** Lets the user drag a box around the card on a photo the host took, and saves the cropped card. No reading. */
+    @PluginMethod
+    fun cropCard(call: PluginCall) {
+        val path = call.getString("path")
+        if (path.isNullOrEmpty()) return call.reject("`path` is required.", INVALID_ARGUMENT)
+        val source = File(if (path.startsWith("file://")) Uri.parse(path).path ?: path else path)
+        val folder = try {
+            destinationFolder(call.getString("directory"), call.getString("folder"))
+        } catch (e: IllegalArgumentException) {
+            return call.reject("Invalid destination: ${e.message}", INVALID_ARGUMENT)
+        }
+        val capture = Capture(call, folder, selectTable = false, cropSource = source)
+        if (!gate.begin(capture)) return call.reject("A capture is already in progress.", BUSY)
+        val job = Runnable {
+            val bitmap = try { ImageScanner.decodeUpright(source, 1024) } catch (e: Exception) { null } catch (e: OutOfMemoryError) { null }
+            if (bitmap == null) return@Runnable gate.settle(capture) { it.call.reject("Could not read an image at ${source.path}.", INVALID_ARGUMENT) }
+            val start = try {
+                val argb = IntArray(bitmap.width * bitmap.height)
+                bitmap.getPixels(argb, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                CardFinder.find(TimeCardScanner.grayFromArgb(argb), bitmap.width, bitmap.height)
+            } catch (e: Exception) { null } finally { bitmap.recycle() } ?: CardFinder.FALLBACK
+            activity.runOnUiThread {
+                if (!gate.holds(capture)) return@runOnUiThread
+                try {
+                    boxLauncher.launch(TableBoxActivity.intent(context, source, start, R.string.timecard_scanner_card_title, R.string.timecard_scanner_card_use))
+                } catch (e: Exception) {
+                    gate.settle(capture) { it.call.reject("Could not open the crop screen: ${e.message}", SCAN_FAILED, e) }
+                }
+            }
+        }
+        try {
+            worker.execute(job)
+        } catch (e: RejectedExecutionException) {
+            gate.settle(capture) { it.call.reject("The plugin is shutting down.", SCAN_FAILED, e) }
+        }
     }
 
     @PluginMethod
@@ -159,7 +198,8 @@ class TimeCardScannerPlugin : Plugin() {
 
     private fun onBoxResult(result: ActivityResult) {
         val pending = gate.current() ?: return
-        val file = pending.file
+        val source = pending.cropSource
+        val file = pending.file ?: source
         val data = result.data
         val region = if (result.resultCode == Activity.RESULT_OK && data != null) {
             ScanRegion.of(data.getDoubleExtra("x", Double.NaN), data.getDoubleExtra("y", Double.NaN), data.getDoubleExtra("width", Double.NaN), data.getDoubleExtra("height", Double.NaN))
@@ -167,14 +207,44 @@ class TimeCardScannerPlugin : Plugin() {
             null
         }
         if (file == null || region == null) {
-            // Cancelled: nothing was asked of the photo, so do not leave it behind.
-            file?.delete()
+            // Cancelled: nothing was asked of the photo, so do not leave it behind. (A host's own photo is not ours to delete.)
+            if (source == null) file?.delete()
             return gate.settle(pending) { it.call.reject("The user cancelled the scan.", CANCELLED) }
+        }
+        if (source != null) {
+            return try {
+                worker.execute { gate.settle(pending) { saveCrop(source, region, pending.folder, it.call) } }
+            } catch (e: RejectedExecutionException) {
+                gate.settle(pending) { it.call.reject("The plugin is shutting down.", SCAN_FAILED, e) }
+            }
         }
         try {
             worker.execute { gate.settle(pending) { scan(file, pending.extra, it.call, region) } }
         } catch (e: RejectedExecutionException) {
             gate.settle(pending) { it.call.reject("The plugin is shutting down.", SCAN_FAILED, e) }
+        }
+    }
+
+    private fun saveCrop(source: File, region: ScanRegion, folder: File, call: PluginCall) {
+        var bitmap: android.graphics.Bitmap? = null
+        var part: android.graphics.Bitmap? = null
+        try {
+            bitmap = ImageScanner.decodeUpright(source) ?: return call.reject("Could not read an image at ${source.path}.", INVALID_ARGUMENT)
+            val p = region.pixels(bitmap.width, bitmap.height)
+            part = android.graphics.Bitmap.createBitmap(bitmap, p.left, p.top, p.width, p.height)
+            val file = File(folder, "card-${UUID.randomUUID()}.jpg")
+            folder.mkdirs()
+            file.outputStream().use { part.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }
+            val image = JSObject().put("path", file.path)
+                .put("webPath", FileUtils.getPortablePath(context, bridge.localUrl, Uri.fromFile(file)))
+            call.resolve(JSObject().put("image", image))
+        } catch (e: Exception) {
+            call.reject("Could not save the cropped photo: ${e.message}", SCAN_FAILED, e)
+        } catch (e: OutOfMemoryError) {
+            call.reject("Could not save the cropped photo: the photo is too large.", SCAN_FAILED)
+        } finally {
+            part?.recycle()
+            if (bitmap !== part) bitmap?.recycle()
         }
     }
 

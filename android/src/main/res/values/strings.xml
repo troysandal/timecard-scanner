@@ -5,4 +5,7 @@
     <string name="timecard_scanner_box_title">Drag the box over the checkpoint rows</string>
     <string name="timecard_scanner_box_cancel">Cancel</string>
     <string name="timecard_scanner_box_read">Read</string>
+    <!-- Shown on the screen where the user drags a box around the card (cropCard). -->
+    <string name="timecard_scanner_card_title">Drag the box around the card</string>
+    <string name="timecard_scanner_card_use">Use</string>
 </resources>

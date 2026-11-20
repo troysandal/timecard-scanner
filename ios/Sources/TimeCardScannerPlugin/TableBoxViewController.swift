@@ -18,11 +18,21 @@ final class TableBoxViewController: UIViewController {
     private let imageView = UIImageView()
     private let overlay = BoxOverlayView()
     private let titleLabel = UILabel()
+    /// Wording of the screen. The defaults are the "read the table" step of `captureCard`.
+    struct Strings {
+        var title = "Drag the box over the checkpoint rows"
+        var cancel = "Cancel"
+        var confirm = "Read"
+        static let table = Strings()
+        static let card = Strings(title: "Drag the box around the card", cancel: "Cancel", confirm: "Use")
+    }
+    private let strings: Strings
     private let readButton = UIButton(type: .system)
     private let cancelButton = UIButton(type: .system)
 
-    init(image: UIImage, initial: ScanRegion, completion: @escaping (Outcome) -> Void) {
+    init(image: UIImage, initial: ScanRegion, strings: Strings = .table, completion: @escaping (Outcome) -> Void) {
         self.image = image
+        self.strings = strings
         self.box = CGRect(x: initial.x, y: initial.y, width: initial.width, height: initial.height)
         self.completion = completion
         super.init(nibName: nil, bundle: nil)
@@ -46,7 +56,7 @@ final class TableBoxViewController: UIViewController {
         overlay.onChange = { [weak self] in self?.box = $0 }
         view.addSubview(overlay)
 
-        titleLabel.text = Self.string("Drag the box over the checkpoint rows")
+        titleLabel.text = Self.string(strings.title)
         titleLabel.textColor = .white
         titleLabel.font = .preferredFont(forTextStyle: .headline)
         titleLabel.textAlignment = .center
@@ -54,9 +64,9 @@ final class TableBoxViewController: UIViewController {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(titleLabel)
 
-        cancelButton.setTitle(Self.string("Cancel"), for: .normal)
+        cancelButton.setTitle(Self.string(strings.cancel), for: .normal)
         cancelButton.addTarget(self, action: #selector(cancel), for: .touchUpInside)
-        readButton.setTitle(Self.string("Read"), for: .normal)
+        readButton.setTitle(Self.string(strings.confirm), for: .normal)
         readButton.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         readButton.addTarget(self, action: #selector(read), for: .touchUpInside)
         let buttons = UIStackView(arrangedSubviews: [cancelButton, readButton])

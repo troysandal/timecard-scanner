@@ -25,6 +25,7 @@ public class TimeCardScannerPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "captureCard", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "scanImage", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cropCard", returnType: CAPPluginReturnPromise),
     ]
 
     /// Kept alive for the duration of one camera presentation.
@@ -39,7 +40,8 @@ public class TimeCardScannerPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func isAvailable(_ call: CAPPluginCall) {
         var available = false
         if #available(iOS 26, *) { available = VNDocumentCameraViewController.isSupported }
-        call.resolve(["available": available])
+        // `available` is the old name of `captureAvailable`, kept for hosts not yet updated. Cropping needs no camera.
+        call.resolve(["captureAvailable": available, "available": available, "photoAvailable": true])
     }
 
     @objc func captureCard(_ call: CAPPluginCall) {
@@ -85,6 +87,52 @@ public class TimeCardScannerPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                 }
             }
+        }
+    }
+
+    /// Lets the user drag a box around the card on a photo the host took, and saves the cropped card. No reading,
+    /// so it works on every iOS the plugin supports.
+    @objc func cropCard(_ call: CAPPluginCall) {
+        guard let path = call.getString("path"), !path.isEmpty else {
+            return call.reject("`path` is required.", ErrorCode.invalidArgument)
+        }
+        let source = path.hasPrefix("file://") ? URL(string: path) : URL(fileURLWithPath: path)
+        guard let source, let image = ImageLoading.uprightImage(contentsOf: source) else {
+            return call.reject("Could not read an image at \(path).", ErrorCode.invalidArgument)
+        }
+        let folder: URL
+        do {
+            folder = try Self.destinationFolder(directory: call.getString("directory"), folder: call.getString("folder"))
+        } catch {
+            return call.reject("Invalid destination: \(error.localizedDescription)", ErrorCode.invalidArgument)
+        }
+        guard let slot = captureSlot.acquire() else {
+            return call.reject("A capture is already in progress.", ErrorCode.busy)
+        }
+        Task {
+            defer { self.captureSlot.release(slot) }
+            let start = CardDetector.startingBox(in: image)
+            let outcome = await withCheckedContinuation { (continuation: CheckedContinuation<TableBoxViewController.Outcome, Never>) in
+                Task { @MainActor in
+                    guard let host = self.bridge?.viewController else { return continuation.resume(returning: .cancelled) }
+                    let screen = TableBoxViewController(image: UIImage(cgImage: image), initial: start, strings: .card) { continuation.resume(returning: $0) }
+                    host.present(screen, animated: true)
+                }
+            }
+            guard case .confirmed(let region) = outcome else {
+                return call.reject("The user cancelled the crop.", ErrorCode.cancelled)
+            }
+            guard let part = region.crop(image), let jpeg = ImageLoading.jpegData(from: part) else {
+                return call.reject("Could not cut the card out of the photo.", ErrorCode.scanFailed)
+            }
+            let file = folder.appendingPathComponent("card-\(UUID().uuidString).jpg")
+            do {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                try jpeg.write(to: file, options: .atomic)
+            } catch {
+                return call.reject("Could not save the photo: \(error.localizedDescription)", ErrorCode.scanFailed, error)
+            }
+            call.resolve(["image": ["path": file.path, "webPath": self.webPath(for: file)]])
         }
     }
 

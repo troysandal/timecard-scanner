@@ -34,12 +34,13 @@ roughly 4 MB per ABI (the bundled ML Kit text model) plus 0.3 MB for the digit m
 ## Use
 
 ```ts
+import { Directory } from '@capacitor/filesystem';
 import { TimeCardScanner } from 'timecard-scanner';
 
 if ((await TimeCardScanner.isAvailable()).captureAvailable) {
   try {
     const { image, rows, warnings } = await TimeCardScanner.captureCard({
-      directory: 'DOCUMENTS',
+      directory: Directory.Documents,
       folder: 'cards',
     });
     // image.webPath → <img src>; image.path → @capacitor/filesystem
@@ -78,7 +79,7 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 
 const shot = await Camera.getPhoto({ source: CameraSource.Camera, resultType: CameraResultType.Uri, quality: 95 });
 try {
-  const { image } = await TimeCardScanner.cropCard({ path: shot.path!, directory: 'DOCUMENTS', folder: 'cards' });
+  const { image } = await TimeCardScanner.cropCard({ path: shot.path!, directory: Directory.Documents, folder: 'cards' });
   // image.webPath → <img src>; the cropped card, saved as card-<uuid>.jpg. `shot.path` is still the host's to delete.
 } catch (e: any) {
   if (e.code === 'CANCELLED') return; // the user closed the crop screen
@@ -112,8 +113,8 @@ release) beside `photoAvailable`.
   just before scanning at an event with no signal.
 - **Reading** is fully offline and needs no Play services: `scanImage({ path })` works on
   any device.
-- **Photo location:** `directory` defaults to `'DATA'` on Android (the app's files
-  directory). `'DOCUMENTS'` is the shared Documents folder, as in `@capacitor/filesystem`,
+- **Photo location:** `directory` (a `Directory` from `@capacitor/filesystem`; Documents, Data, Library or Cache) defaults to `Directory.Data` on Android (the app's files
+  directory). `Directory.Documents` is the shared Documents folder, as in `@capacitor/filesystem`,
   and needs storage permission.
 - **Flags matter more than on iOS.** A cell is `flagged` when it is an unsure
   read, a value the two readers disagree on, a suspect shape (a line through the writing,

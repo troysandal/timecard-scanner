@@ -1,13 +1,15 @@
-/** Where the captured photo is stored. Same names as `@capacitor/filesystem`'s `Directory`. */
-export type ScanDirectory = 'DOCUMENTS' | 'DATA' | 'LIBRARY' | 'CACHE';
+import type { Directory } from '@capacitor/filesystem';
+
+/** The `@capacitor/filesystem` directories this plugin can save into (the others are not resolved natively). */
+type PhotoDirectory = Directory.Documents | Directory.Data | Directory.Library | Directory.Cache;
 
 export interface CaptureOptions {
   /**
-   * Base directory for the saved photo, resolved as `@capacitor/filesystem` does on each platform.
+   * Base `Directory` (from `@capacitor/filesystem`) for the saved photo, resolved as `@capacitor/filesystem` does on each platform.
    * Default: `'DOCUMENTS'` on iOS, `'DATA'` on Android (where `'DOCUMENTS'` is the shared Documents
    * folder and needs storage permission).
    */
-  directory?: ScanDirectory;
+  directory?: PhotoDirectory;
   /** Folder inside `directory` to save into, created if missing. The file name is generated. */
   folder?: string;
   /**
@@ -38,7 +40,7 @@ export interface CropCardOptions {
   /** The photo to crop: a native file path or `file://` URL, e.g. from `@capacitor/camera` (`getPhoto` with `resultType: Uri`). */
   path: string;
   /** Where the cropped photo is saved. Same meaning as in {@link CaptureOptions}. */
-  directory?: ScanDirectory;
+  directory?: PhotoDirectory;
   folder?: string;
 }
 
